@@ -367,27 +367,26 @@ async function finishCall() {
   
   setLoading(true);
   try {
-    const res = await apiCall('finishCall', {
+    // Fire and forget finishCall (don't await it to avoid blocking the user)
+    apiCall('finishCall', {
       idProspecto: state.prospect.id,
       estadoFinal: estado,
       interes: interes,
       notas: notas,
       proximaAccion: accion,
-      seguimiento: new Date().toISOString() // Or another format
-    }, 'POST');
+      seguimiento: new Date().toISOString()
+    }, 'POST').catch(e => console.error('Error in background finishCall:', e));
     
-    if (res.success) {
-      showNotification('Llamada finalizada correctamente');
-      document.getElementById('finish-call-modal').classList.remove('active');
-      document.getElementById('finish-call-form').reset();
-      state.prospect = null;
-      await fetchProspect();
-    } else {
-      showNotification(res.message || 'Error al guardar datos', true);
-    }
+    // Inmediately prepare UI for next prospect
+    showNotification('Llamada guardada, buscando siguiente prospecto...');
+    document.getElementById('finish-call-modal').classList.remove('active');
+    document.getElementById('finish-call-form').reset();
+    state.prospect = null;
+    
+    // Fetch next prospect without waiting for the save to finish
+    await fetchProspect();
   } catch (e) {
     showNotification('Error de conexión', true);
-  } finally {
     setLoading(false);
   }
 }

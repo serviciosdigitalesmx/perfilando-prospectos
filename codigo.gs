@@ -136,12 +136,17 @@ function getNextProspect(idUsuario) {
     
     if (isPendiente && intentos < maxIntents) {
       const rowNum = i + 1;
+      const rowRange = prospectSheet.getRange(rowNum, 1, 1, pHeader.length);
+      const rowData = rowRange.getValues()[0];
       
-      // Actualizar estado en la hoja
-      prospectSheet.getRange(rowNum, estadoIdx + 1).setValue('En llamada');
-      prospectSheet.getRange(rowNum, intentoIdx + 1).setValue(intentos + 1);
-      prospectSheet.getRange(rowNum, bloqueadoIdx + 1).setValue(idUsuario);
-      prospectSheet.getRange(rowNum, ultimaIdx + 1).setValue(now);
+      // Actualizar estado en la hoja (todo en memoria)
+      if (estadoIdx !== -1) rowData[estadoIdx] = 'En llamada';
+      if (intentoIdx !== -1) rowData[intentoIdx] = intentos + 1;
+      if (bloqueadoIdx !== -1) rowData[bloqueadoIdx] = idUsuario;
+      if (ultimaIdx !== -1) rowData[ultimaIdx] = now;
+      
+      // Escribir a la hoja en una sola operacion rápida
+      rowRange.setValues([rowData]);
       
       // Armar el objeto taller directamente de la misma fila
       const taller = {
@@ -233,14 +238,18 @@ function finishCall(data) {
   const row = findRowByUUID(sheet, idIdx, data.idProspecto);
   if (row === -1) return { success: false, message: 'Prospecto no encontrado' };
   
-  if (estadoIdx !== -1) sheet.getRange(row, estadoIdx + 1).setValue(data.estadoFinal || 'Cerrado');
-  if (notasIdx !== -1) sheet.getRange(row, notasIdx + 1).setValue(data.notas || '');
-  if (interesIdx !== -1) sheet.getRange(row, interesIdx + 1).setValue(data.interes || '');
-  if (accionIdx !== -1) sheet.getRange(row, accionIdx + 1).setValue(data.proximaAccion || '');
-  if (segIdx !== -1) sheet.getRange(row, segIdx + 1).setValue(data.seguimiento || '');
-  if (payloadIdx !== -1) sheet.getRange(row, payloadIdx + 1).setValue(data.payload || '');
+  const rowRange = sheet.getRange(row, 1, 1, header.length);
+  const rowData = rowRange.getValues()[0];
   
-  if (bloqueadoIdx !== -1) sheet.getRange(row, bloqueadoIdx + 1).setValue('');
+  if (estadoIdx !== -1) rowData[estadoIdx] = data.estadoFinal || 'Cerrado';
+  if (notasIdx !== -1) rowData[notasIdx] = data.notas || '';
+  if (interesIdx !== -1) rowData[interesIdx] = data.interes || '';
+  if (accionIdx !== -1) rowData[accionIdx] = data.proximaAccion || '';
+  if (segIdx !== -1) rowData[segIdx] = data.seguimiento || '';
+  if (payloadIdx !== -1) rowData[payloadIdx] = data.payload || '';
+  if (bloqueadoIdx !== -1) rowData[bloqueadoIdx] = '';
+  
+  rowRange.setValues([rowData]);
   
   return { success: true };
 }
