@@ -2,7 +2,7 @@
 // 1. CONFIGURACIÓN DE HOJAS
 // ============================================================
 const HOJAS = {
-  DENUE: 'DENUE',
+  DENUE: 'Alta confianza nacional',
   PROSPECTOS: 'Prospectos',
   CONVERSACIONES: 'Conversaciones',
   USUARIOS: 'Usuarios',
@@ -402,4 +402,54 @@ function doPost(e) {
       .createTextOutput(JSON.stringify({ error: error.message }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+// ============================================================
+// 5. HERRAMIENTAS ADMINISTRATIVAS
+// ============================================================
+
+function poblarProspectosDesdeAltaConfianza() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hojaAlta = ss.getSheetByName('Alta confianza nacional');
+  const hojaProspectos = ss.getSheetByName('Prospectos');
+  
+  if (!hojaAlta || !hojaProspectos) {
+    throw new Error("No se encontraron las hojas 'Alta confianza nacional' o 'Prospectos'.");
+  }
+  
+  const datosAlta = hojaAlta.getDataRange().getValues();
+  const idDenueColIdx = datosAlta[0].indexOf('ID DENUE');
+  
+  if (idDenueColIdx === -1) {
+    throw new Error("No se encontró la columna 'ID DENUE' en la hoja 'Alta confianza nacional'.");
+  }
+  
+  // Limpiar hoja de prospectos respetando el encabezado
+  const prospectosData = hojaProspectos.getDataRange().getValues();
+  if (prospectosData.length > 1) {
+    hojaProspectos.getRange(2, 1, prospectosData.length - 1, hojaProspectos.getLastColumn()).clearContent();
+  }
+  
+  const nuevasFilas = [];
+  // Empezar desde 1 para omitir encabezados
+  for (let i = 1; i < datosAlta.length; i++) {
+    const idDenue = datosAlta[i][idDenueColIdx];
+    if (idDenue) {
+      // ID, ID DENUE, Estado, Intento, Bloqueado por, Última llamada
+      nuevasFilas.push([
+        generateUUID(), // ID
+        idDenue,        // ID DENUE
+        'Pendiente',    // Estado
+        0,              // Intento
+        '',             // Bloqueado por
+        ''              // Última llamada
+      ]);
+    }
+  }
+  
+  if (nuevasFilas.length > 0) {
+    hojaProspectos.getRange(2, 1, nuevasFilas.length, nuevasFilas[0].length).setValues(nuevasFilas);
+  }
+  
+  return nuevasFilas.length;
 }
