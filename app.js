@@ -1,5 +1,5 @@
 // URL of your deployed Google Apps Script Web App
-const API_URL = "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
+const API_URL = "https://script.google.com/macros/s/AKfycbyqwFneV1aBz7nHHQKjmZ1gdu3RzXbxli8_VTU1UhQp-ZCCxsIxmeXKZ_b1pBIlxkwMUg/exec";
 
 // Application State
 let state = {
