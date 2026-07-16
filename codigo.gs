@@ -3,7 +3,7 @@
 // ============================================================
 const HOJAS = {
   DENUE: 'Alta confianza nacional',
-  PROSPECTOS: 'Prospectos',
+  PROSPECTOS: 'Alta confianza nacional',
   CONVERSACIONES: 'Conversaciones',
   USUARIOS: 'Usuarios',
   NODOS: 'Nodos',
@@ -21,6 +21,7 @@ function getSheet(name) {
 
 function getConfig() {
   const sheet = getSheet(HOJAS.CONFIG);
+  if (!sheet) return {};
   const data = sheet.getDataRange().getValues();
   const config = {};
   data.forEach(row => {
@@ -35,28 +36,11 @@ function generateUUID() {
   return Utilities.getUuid();
 }
 
-function getColumnIndex(headerRow, columnName) {
-  return headerRow.indexOf(columnName);
-}
-
 function findRowByUUID(sheet, uuidColumn, uuid) {
   const data = sheet.getDataRange().getValues();
   for (let i = 0; i < data.length; i++) {
     if (data[i][uuidColumn] === uuid) {
       return i + 1; // 1-indexed row number
-    }
-  }
-  return -1;
-}
-
-function findRowByDENUE(sheet, denueId) {
-  const data = sheet.getDataRange().getValues();
-  const header = data[0];
-  const denueCol = header.indexOf('ID DENUE');
-  if (denueCol === -1) return -1;
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][denueCol] == denueId) {
-      return i + 1;
     }
   }
   return -1;
@@ -94,111 +78,99 @@ function getNextProspect(idUsuario) {
   const lockTimeout = parseInt(config.tiempo_bloqueo_minutos) || 5; // minutos
 
   const prospectSheet = getSheet(HOJAS.PROSPECTOS);
-  const denueSheet = getSheet(HOJAS.DENUE);
-  
-  // Leer cabeceras
   const pHeader = prospectSheet.getDataRange().getValues()[0];
-  const dHeader = denueSheet.getDataRange().getValues()[0];
   
-  // Índices en PROSPECTOS
+  // Columnas de seguimiento
   const idIdx = pHeader.indexOf('ID');
-  const denueIdx = pHeader.indexOf('ID DENUE');
   const estadoIdx = pHeader.indexOf('Estado');
   const intentoIdx = pHeader.indexOf('Intento');
   const bloqueadoIdx = pHeader.indexOf('Bloqueado por');
   const ultimaIdx = pHeader.indexOf('Última llamada');
   
-  // Índices en DENUE (para obtener datos del taller)
-  const denueIdIdx = dHeader.indexOf('ID DENUE');
-  const nombreIdx = dHeader.indexOf('Nombre del establecimiento');
-  const telefonoIdx = dHeader.indexOf('Teléfono');
-  const entidadIdx = dHeader.indexOf('Entidad');
-  const municipioIdx = dHeader.indexOf('Municipio');
-  const localidadIdx = dHeader.indexOf('Localidad');
-  const actividadIdx = dHeader.indexOf('Actividad económica');
-  const personalIdx = dHeader.indexOf('Personal ocupado');
-  const correoIdx = dHeader.indexOf('Correo');
-  const sitioIdx = dHeader.indexOf('Sitio web');
-  const direccionIdx = dHeader.indexOf('Dirección');
-  const cpIdx = dHeader.indexOf('Código postal');
-  const latIdx = dHeader.indexOf('Latitud');
-  const lngIdx = dHeader.indexOf('Longitud');
-  const mapsIdx = dHeader.indexOf('Google Maps');
-  const whatsIdx = dHeader.indexOf('WhatsApp candidato');
-  const fechaIdx = dHeader.indexOf('Fecha de alta DENUE');
-  const confianzaIdx = dHeader.indexOf('Confianza');
-  const notaIdx = dHeader.indexOf('Nota de verificación');
+  // Si no existen las columnas, asumimos que no se ha corrido prepararHojaUnica
+  if (idIdx === -1 || estadoIdx === -1) {
+    return { success: false, message: 'Faltan columnas de seguimiento. Por favor ejecuta prepararHojaUnica().' };
+  }
+  
+  // Índices de taller
+  const denueIdIdx = pHeader.indexOf('ID DENUE');
+  const nombreIdx = pHeader.indexOf('Nombre del establecimiento');
+  const telefonoIdx = pHeader.indexOf('Teléfono');
+  const entidadIdx = pHeader.indexOf('Entidad');
+  const municipioIdx = pHeader.indexOf('Municipio');
+  const localidadIdx = pHeader.indexOf('Localidad');
+  const actividadIdx = pHeader.indexOf('Actividad económica');
+  const personalIdx = pHeader.indexOf('Personal ocupado');
+  const correoIdx = pHeader.indexOf('Correo');
+  const sitioIdx = pHeader.indexOf('Sitio web');
+  const direccionIdx = pHeader.indexOf('Dirección');
+  const cpIdx = pHeader.indexOf('Código postal');
+  const latIdx = pHeader.indexOf('Latitud');
+  const lngIdx = pHeader.indexOf('Longitud');
+  const mapsIdx = pHeader.indexOf('Google Maps');
+  const whatsIdx = pHeader.indexOf('WhatsApp candidato');
+  const fechaIdx = pHeader.indexOf('Fecha de alta DENUE');
+  const confianzaIdx = pHeader.indexOf('Confianza');
+  const notaIdx = pHeader.indexOf('Nota de verificación');
 
-  // Obtener todos los prospectos con estado 'Pendiente' o 'Bloqueado' (pero no por otro usuario)
   const pData = prospectSheet.getDataRange().getValues();
   const now = new Date();
   
   for (let i = 1; i < pData.length; i++) {
-    const estado = pData[i][estadoIdx];
+    const estado = (pData[i][estadoIdx] || '').toString().trim();
     const bloqueadoPor = pData[i][bloqueadoIdx];
-    const intentos = parseInt(pData[i][intentoIdx]) || 0;
+    const rawIntento = pData[i][intentoIdx];
+    const intentos = (rawIntento === '' || isNaN(parseInt(rawIntento))) ? 0 : parseInt(rawIntento);
     
-    // Si está bloqueado por otro usuario, verificar si expiró
+    // Verificar bloqueos expirados
     if (bloqueadoPor && bloqueadoPor !== idUsuario) {
-      // Obtener tiempo de bloqueo (última llamada o timestamp de bloqueo)
-      // Usamos la columna Última llamada como timestamp de bloqueo
       const lastCall = pData[i][ultimaIdx];
       if (lastCall instanceof Date) {
-        const diff = (now - lastCall) / (1000 * 60); // minutos
-        if (diff < lockTimeout) {
-          continue; // aún bloqueado
-        }
+        const diff = (now - lastCall) / (1000 * 60);
+        if (diff < lockTimeout) continue;
       }
-      // Si expiró, lo liberamos automáticamente (lo tomamos como pendiente)
     }
     
-    // Si está pendiente y no ha excedido intentos
-    if (estado === 'Pendiente' && intentos < maxIntents) {
-      // Asignar este prospecto al usuario
+    // Tratar vacíos como pendientes
+    const isPendiente = estado === 'Pendiente' || estado === '';
+    
+    if (isPendiente && intentos < maxIntents) {
       const rowNum = i + 1;
-      // Actualizar estado a 'En llamada', incrementar intento, guardar bloqueo y timestamp
+      
+      // Actualizar estado en la hoja
       prospectSheet.getRange(rowNum, estadoIdx + 1).setValue('En llamada');
       prospectSheet.getRange(rowNum, intentoIdx + 1).setValue(intentos + 1);
       prospectSheet.getRange(rowNum, bloqueadoIdx + 1).setValue(idUsuario);
       prospectSheet.getRange(rowNum, ultimaIdx + 1).setValue(now);
       
-      // Obtener el ID DENUE de este prospecto
-      const denueId = pData[i][denueIdx];
-      // Buscar en DENUE
-      const dData = denueSheet.getDataRange().getValues();
-      let taller = null;
-      for (let j = 1; j < dData.length; j++) {
-        if (dData[j][denueIdIdx] == denueId) {
-          taller = {
-            idDENUE: dData[j][denueIdIdx],
-            nombre: dData[j][nombreIdx],
-            telefono: dData[j][telefonoIdx],
-            entidad: dData[j][entidadIdx],
-            municipio: dData[j][municipioIdx],
-            localidad: dData[j][localidadIdx],
-            actividad: dData[j][actividadIdx],
-            personal: dData[j][personalIdx],
-            correo: dData[j][correoIdx],
-            sitio: dData[j][sitioIdx],
-            direccion: dData[j][direccionIdx],
-            cp: dData[j][cpIdx],
-            lat: dData[j][latIdx],
-            lng: dData[j][lngIdx],
-            maps: dData[j][mapsIdx],
-            whatsapp: dData[j][whatsIdx],
-            fechaAlta: dData[j][fechaIdx],
-            confianza: dData[j][confianzaIdx],
-            notaVerificacion: dData[j][notaIdx]
-          };
-          break;
-        }
-      }
+      // Armar el objeto taller directamente de la misma fila
+      const taller = {
+        idDENUE: denueIdIdx !== -1 ? pData[i][denueIdIdx] : '',
+        nombre: nombreIdx !== -1 ? pData[i][nombreIdx] : '',
+        telefono: telefonoIdx !== -1 ? pData[i][telefonoIdx] : '',
+        entidad: entidadIdx !== -1 ? pData[i][entidadIdx] : '',
+        municipio: municipioIdx !== -1 ? pData[i][municipioIdx] : '',
+        localidad: localidadIdx !== -1 ? pData[i][localidadIdx] : '',
+        actividad: actividadIdx !== -1 ? pData[i][actividadIdx] : '',
+        personal: personalIdx !== -1 ? pData[i][personalIdx] : '',
+        correo: correoIdx !== -1 ? pData[i][correoIdx] : '',
+        sitio: sitioIdx !== -1 ? pData[i][sitioIdx] : '',
+        direccion: direccionIdx !== -1 ? pData[i][direccionIdx] : '',
+        cp: cpIdx !== -1 ? pData[i][cpIdx] : '',
+        lat: latIdx !== -1 ? pData[i][latIdx] : '',
+        lng: lngIdx !== -1 ? pData[i][lngIdx] : '',
+        maps: mapsIdx !== -1 ? pData[i][mapsIdx] : '',
+        whatsapp: whatsIdx !== -1 ? pData[i][whatsIdx] : '',
+        fechaAlta: fechaIdx !== -1 ? pData[i][fechaIdx] : '',
+        confianza: confianzaIdx !== -1 ? pData[i][confianzaIdx] : '',
+        notaVerificacion: notaIdx !== -1 ? pData[i][notaIdx] : ''
+      };
       
       return {
         success: true,
         prospecto: {
           id: pData[i][idIdx],
-          idDENUE: denueId,
+          idDENUE: taller.idDENUE,
           estado: 'En llamada',
           intento: intentos + 1,
           taller: taller
@@ -216,27 +188,22 @@ function releaseProspect(idProspecto, idUsuario) {
   const idIdx = header.indexOf('ID');
   const bloqueadoIdx = header.indexOf('Bloqueado por');
   const estadoIdx = header.indexOf('Estado');
+  
   const row = findRowByUUID(sheet, idIdx, idProspecto);
-  if (row === -1) {
-    return { success: false, message: 'Prospecto no encontrado' };
-  }
-  // Verificar que el bloqueo corresponda al usuario
+  if (row === -1) return { success: false, message: 'Prospecto no encontrado' };
+  
   const bloqueado = sheet.getRange(row, bloqueadoIdx + 1).getValue();
   if (bloqueado !== idUsuario) {
     return { success: false, message: 'No tienes permiso para liberar este prospecto' };
   }
-  // Liberar: cambiar estado a 'Pendiente' y limpiar bloqueo
+  
   sheet.getRange(row, estadoIdx + 1).setValue('Pendiente');
   sheet.getRange(row, bloqueadoIdx + 1).setValue('');
   return { success: true };
 }
 
 function saveConversationStep(data) {
-  // data: { idProspecto, idUsuario, nodoId, payload, timestamp, ... }
   const sheet = getSheet(HOJAS.CONVERSACIONES);
-  const header = sheet.getDataRange().getValues()[0];
-  // Asegurar que las columnas existen, si no, agregarlas
-  // Aquí asumimos que existe estructura
   const newRow = [
     generateUUID(),
     data.idProspecto,
@@ -252,7 +219,6 @@ function saveConversationStep(data) {
 }
 
 function finishCall(data) {
-  // data: { idProspecto, estadoFinal, notas, interes, proximaAccion, seguimiento }
   const sheet = getSheet(HOJAS.PROSPECTOS);
   const header = sheet.getDataRange().getValues()[0];
   const idIdx = header.indexOf('ID');
@@ -262,19 +228,18 @@ function finishCall(data) {
   const accionIdx = header.indexOf('Próxima acción');
   const segIdx = header.indexOf('Seguimiento');
   const payloadIdx = header.indexOf('Payload final');
+  const bloqueadoIdx = header.indexOf('Bloqueado por');
   
   const row = findRowByUUID(sheet, idIdx, data.idProspecto);
   if (row === -1) return { success: false, message: 'Prospecto no encontrado' };
   
-  sheet.getRange(row, estadoIdx + 1).setValue(data.estadoFinal || 'Cerrado');
+  if (estadoIdx !== -1) sheet.getRange(row, estadoIdx + 1).setValue(data.estadoFinal || 'Cerrado');
   if (notasIdx !== -1) sheet.getRange(row, notasIdx + 1).setValue(data.notas || '');
   if (interesIdx !== -1) sheet.getRange(row, interesIdx + 1).setValue(data.interes || '');
   if (accionIdx !== -1) sheet.getRange(row, accionIdx + 1).setValue(data.proximaAccion || '');
   if (segIdx !== -1) sheet.getRange(row, segIdx + 1).setValue(data.seguimiento || '');
   if (payloadIdx !== -1) sheet.getRange(row, payloadIdx + 1).setValue(data.payload || '');
   
-  // Liberar bloqueo
-  const bloqueadoIdx = header.indexOf('Bloqueado por');
   if (bloqueadoIdx !== -1) sheet.getRange(row, bloqueadoIdx + 1).setValue('');
   
   return { success: true };
@@ -285,50 +250,20 @@ function finishCall(data) {
 // ============================================================
 
 function doGet(e) {
-  // Validar que e exista
-  if (!e) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ error: 'No se recibieron parámetros' }))
-      .setMimeType(ContentService.MimeType.JSON);
+  if (!e || !e.parameter.action) {
+    return ContentService.createTextOutput(JSON.stringify({ error: 'Falta el parámetro action' })).setMimeType(ContentService.MimeType.JSON);
   }
-  
   const params = e.parameter;
   const action = params.action;
-  
-  if (!action) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ error: 'Falta el parámetro action' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
   
   try {
     let response = {};
     switch (action) {
-      case 'login':
-        const usuario = params.usuario;
-        const password = params.password;
-        response = handleLogin(usuario, password);
-        break;
-        
-      case 'getProspect':
-        const idUsuario = params.idUsuario;
-        if (!idUsuario) throw new Error('Falta idUsuario');
-        response = getNextProspect(idUsuario);
-        break;
-        
-      case 'releaseProspect':
-        const idProspecto = params.idProspecto;
-        const idUser = params.idUsuario;
-        if (!idProspecto || !idUser) throw new Error('Faltan parámetros');
-        response = releaseProspect(idProspecto, idUser);
-        break;
-        
-      case 'getConfig':
-        response = getConfig();
-        break;
-        
+      case 'login': response = handleLogin(params.usuario, params.password); break;
+      case 'getProspect': response = getNextProspect(params.idUsuario); break;
+      case 'releaseProspect': response = releaseProspect(params.idProspecto, params.idUsuario); break;
+      case 'getConfig': response = getConfig(); break;
       case 'getNodes':
-        // Leer nodos de la hoja Nodos
         const nodeSheet = getSheet(HOJAS.NODOS);
         const nodeData = nodeSheet.getDataRange().getValues();
         const nodes = [];
@@ -336,44 +271,24 @@ function doGet(e) {
         for (let i = 1; i < nodeData.length; i++) {
           const row = nodeData[i];
           const node = {};
-          header.forEach((col, idx) => {
-            node[col] = row[idx];
-          });
-          // Parsear botones si es JSON
+          header.forEach((col, idx) => { node[col] = row[idx]; });
           if (node.botones) {
-            try {
-              node.botones = JSON.parse(node.botones);
-            } catch (e) {
-              node.botones = [];
-            }
+            try { node.botones = JSON.parse(node.botones); } catch (err) { node.botones = []; }
           }
           nodes.push(node);
         }
         response = { success: true, nodes };
         break;
-        
-      default:
-        response = { error: 'Acción no reconocida' };
+      default: response = { error: 'Acción no reconocida' };
     }
-    
-    return ContentService
-      .createTextOutput(JSON.stringify(response))
-      .setMimeType(ContentService.MimeType.JSON);
-    
+    return ContentService.createTextOutput(JSON.stringify(response)).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ error: error.message }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ error: error.message })).setMimeType(ContentService.MimeType.JSON);
   }
 }
 
 function doPost(e) {
-  // Para guardar progreso o finalizar llamada
-  if (!e) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ error: 'No se recibieron datos' }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+  if (!e) return ContentService.createTextOutput(JSON.stringify({ error: 'No se recibieron datos' })).setMimeType(ContentService.MimeType.JSON);
   
   try {
     const data = JSON.parse(e.postData.contents);
@@ -381,26 +296,13 @@ function doPost(e) {
     let response = {};
     
     switch (action) {
-      case 'saveStep':
-        response = saveConversationStep(data);
-        break;
-        
-      case 'finishCall':
-        response = finishCall(data);
-        break;
-        
-      default:
-        response = { error: 'Acción no reconocida' };
+      case 'saveStep': response = saveConversationStep(data); break;
+      case 'finishCall': response = finishCall(data); break;
+      default: response = { error: 'Acción no reconocida' };
     }
-    
-    return ContentService
-      .createTextOutput(JSON.stringify(response))
-      .setMimeType(ContentService.MimeType.JSON);
-      
+    return ContentService.createTextOutput(JSON.stringify(response)).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ error: error.message }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ error: error.message })).setMimeType(ContentService.MimeType.JSON);
   }
 }
 
@@ -408,48 +310,52 @@ function doPost(e) {
 // 5. HERRAMIENTAS ADMINISTRATIVAS
 // ============================================================
 
-function poblarProspectosDesdeAltaConfianza() {
+function prepararHojaUnica() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const hojaAlta = ss.getSheetByName('Alta confianza nacional');
-  const hojaProspectos = ss.getSheetByName('Prospectos');
+  const hoja = ss.getSheetByName(HOJAS.PROSPECTOS);
   
-  if (!hojaAlta || !hojaProspectos) {
-    throw new Error("No se encontraron las hojas 'Alta confianza nacional' o 'Prospectos'.");
+  if (!hoja) {
+    throw new Error("No se encontró la hoja: " + HOJAS.PROSPECTOS);
   }
   
-  const datosAlta = hojaAlta.getDataRange().getValues();
-  const idDenueColIdx = datosAlta[0].indexOf('ID DENUE');
+  const headerRange = hoja.getRange(1, 1, 1, hoja.getLastColumn());
+  const headers = headerRange.getValues()[0];
   
-  if (idDenueColIdx === -1) {
-    throw new Error("No se encontró la columna 'ID DENUE' en la hoja 'Alta confianza nacional'.");
-  }
+  const columnasFaltantes = [
+    'ID', 'Estado', 'Intento', 'Bloqueado por', 'Última llamada', 
+    'Notas', 'Interés', 'Próxima acción', 'Seguimiento', 'Payload final'
+  ];
   
-  // Limpiar hoja de prospectos respetando el encabezado
-  const prospectosData = hojaProspectos.getDataRange().getValues();
-  if (prospectosData.length > 1) {
-    hojaProspectos.getRange(2, 1, prospectosData.length - 1, hojaProspectos.getLastColumn()).clearContent();
-  }
+  let currentLastCol = hoja.getLastColumn();
   
-  const nuevasFilas = [];
-  // Empezar desde 1 para omitir encabezados
-  for (let i = 1; i < datosAlta.length; i++) {
-    const idDenue = datosAlta[i][idDenueColIdx];
-    if (idDenue) {
-      // ID, ID DENUE, Estado, Intento, Bloqueado por, Última llamada
-      nuevasFilas.push([
-        generateUUID(), // ID
-        idDenue,        // ID DENUE
-        'Pendiente',    // Estado
-        0,              // Intento
-        '',             // Bloqueado por
-        ''              // Última llamada
-      ]);
+  // Agregar encabezados faltantes
+  for (const colName of columnasFaltantes) {
+    if (headers.indexOf(colName) === -1) {
+      currentLastCol++;
+      hoja.getRange(1, currentLastCol).setValue(colName);
+      headers.push(colName);
     }
   }
   
-  if (nuevasFilas.length > 0) {
-    hojaProspectos.getRange(2, 1, nuevasFilas.length, nuevasFilas[0].length).setValues(nuevasFilas);
+  // Generar IDs para filas que no lo tengan
+  const idIdx = headers.indexOf('ID');
+  if (idIdx !== -1) {
+    const lastRow = hoja.getLastRow();
+    if (lastRow > 1) {
+      const idsRange = hoja.getRange(2, idIdx + 1, lastRow - 1, 1);
+      const ids = idsRange.getValues();
+      let changed = false;
+      for (let i = 0; i < ids.length; i++) {
+        if (!ids[i][0] || ids[i][0].toString().trim() === '') {
+          ids[i][0] = generateUUID();
+          changed = true;
+        }
+      }
+      if (changed) {
+        idsRange.setValues(ids);
+      }
+    }
   }
   
-  return nuevasFilas.length;
+  SpreadsheetApp.getUi().alert("Hoja preparada correctamente con las columnas necesarias.");
 }
