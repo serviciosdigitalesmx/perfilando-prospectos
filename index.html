@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dialer - Prospección</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Vista Login -->
+  <div id="login-view" class="view active">
+    <div class="login-container">
+      <h1>Dialer</h1>
+      <form id="login-form">
+        <input type="email" id="email" placeholder="Email" required>
+        <input type="password" id="password" placeholder="Contraseña" required>
+        <button type="submit">Iniciar sesión</button>
+        <div id="login-error" class="error"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Vista Principal (Marcador) -->
+  <div id="main-view" class="view">
+    <!-- Cabecera con usuario y dashboard link -->
+    <header>
+      <span id="user-name"></span>
+      <button id="dashboard-btn">Dashboard</button>
+    </header>
+    <!-- Contenedor de prospecto -->
+    <div id="prospect-container">
+      <!-- Tarjeta del taller se renderizará aquí -->
+    </div>
+    <!-- Contenedor de flujo de conversación -->
+    <div id="flow-container">
+      <!-- Nodos de conversación -->
+    </div>
+    <!-- Botones de acción (llamar, maps, etc.) -->
+    <div id="action-buttons">
+      <!-- Los botones se generan dinámicamente -->
+    </div>
+  </div>
+
+  <!-- Vista Dashboard -->
+  <div id="dashboard-view" class="view">
+    <button id="back-to-main">← Volver</button>
+    <div id="dashboard-content">
+      <!-- KPIs -->
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
