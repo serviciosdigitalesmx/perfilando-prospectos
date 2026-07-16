@@ -220,7 +220,7 @@ function renderNodeButtons(node) {
     node.botones.forEach(btn => {
       const button = document.createElement('button');
       button.className = 'btn secondary-btn flow-btn';
-      button.textContent = btn.label;
+      button.textContent = btn.texto || btn.label;
       button.onclick = () => handleNodeAction(node, btn);
       btnContainer.appendChild(button);
     });
@@ -241,13 +241,14 @@ async function handleNodeAction(node, btnConfig) {
       idProspecto: state.prospect.id,
       idUsuario: state.user.id,
       nodoId: node.id || node.ID || 'unknown',
-      payload: btnConfig.label,
+      payload: btnConfig.payload || btnConfig.texto || btnConfig.label,
       timestamp: new Date().toISOString()
     }, 'POST').catch(e => console.error("Error saving step", e));
     
     // Navigate to next node
-    if (btnConfig.next) {
-      const nextNode = state.nodes.find(n => (n.id || n.ID) === btnConfig.next);
+    const nextId = btnConfig.siguiente || btnConfig.next;
+    if (nextId) {
+      const nextNode = state.nodes.find(n => (n.id || n.ID) === nextId);
       if (nextNode) {
         document.querySelector('.node-content p').textContent = nextNode.texto;
         renderNodeButtons(nextNode);

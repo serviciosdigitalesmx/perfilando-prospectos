@@ -3,8 +3,8 @@
   --bg-card: rgba(30, 41, 59, 0.7);
   --primary: #3b82f6;
   --primary-hover: #2563eb;
-  --secondary: #475569;
-  --secondary-hover: #334155;
+  --secondary: #8b5cf6;
+  --secondary-hover: #7c3aed;
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
@@ -272,6 +272,14 @@ header {
 
 .flow-btn {
   min-width: 150px;
+  background: linear-gradient(135deg, var(--secondary), var(--secondary-hover));
+  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+}
+.flow-btn:hover {
+  box-shadow: 0 6px 20px rgba(139, 92, 246, 0.6);
+  transform: translateY(-3px);
 }
 
 /* Action Buttons */
