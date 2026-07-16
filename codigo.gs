@@ -357,5 +357,5 @@ function prepararHojaUnica() {
     }
   }
   
-  SpreadsheetApp.getUi().alert("Hoja preparada correctamente con las columnas necesarias.");
+  console.log("Hoja preparada correctamente con las columnas necesarias.");
 }
