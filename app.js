@@ -115,6 +115,7 @@ loginForm.addEventListener('submit', async (e) => {
         usuario: res.usuario,
         rol: res.rol
       };
+      localStorage.setItem('dialer_user', JSON.stringify(state.user));
       userNameDisplay.textContent = state.user.usuario;
       showNotification('Inicio de sesión exitoso');
       await loadInitialData();
@@ -421,3 +422,19 @@ function loadDashboardData() {
     </div>
   `;
 }
+
+// Session Persistence
+window.addEventListener('DOMContentLoaded', async () => {
+  const savedUser = localStorage.getItem('dialer_user');
+  if (savedUser) {
+    try {
+      state.user = JSON.parse(savedUser);
+      userNameDisplay.textContent = state.user.usuario;
+      showView('main');
+      await loadInitialData();
+    } catch (e) {
+      console.error("Invalid session data");
+      localStorage.removeItem('dialer_user');
+    }
+  }
+});
