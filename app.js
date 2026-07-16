@@ -401,25 +401,35 @@ backToMainBtn.addEventListener('click', () => {
   showView('main');
 });
 
-function loadDashboardData() {
-  // Placeholder for dashboard metrics
+async function loadDashboardData() {
   const dashboardContent = document.getElementById('dashboard-content');
-  dashboardContent.innerHTML = `
-    <div class="dashboard-grid">
-      <div class="kpi-card glass">
-        <h3>Llamadas Hoy</h3>
-        <p class="kpi-value">12</p>
-      </div>
-      <div class="kpi-card glass">
-        <h3>Interés Alto</h3>
-        <p class="kpi-value highlight-success">3</p>
-      </div>
-      <div class="kpi-card glass">
-        <h3>Pendientes</h3>
-        <p class="kpi-value text-muted">45</p>
-      </div>
-    </div>
-  `;
+  dashboardContent.innerHTML = '<div class="loading-overlay" style="position:relative;height:200px;"><div class="spinner"></div></div>';
+  
+  try {
+    const res = await apiCall('getDashboardMetrics');
+    if (res.success) {
+      dashboardContent.innerHTML = `
+        <div class="dashboard-grid">
+          <div class="kpi-card glass">
+            <h3>Llamadas Hoy</h3>
+            <p class="kpi-value">${res.metrics.llamadasHoy}</p>
+          </div>
+          <div class="kpi-card glass">
+            <h3>Interés Alto</h3>
+            <p class="kpi-value highlight-success">${res.metrics.interesAlto}</p>
+          </div>
+          <div class="kpi-card glass">
+            <h3>Pendientes</h3>
+            <p class="kpi-value text-muted">${res.metrics.pendientes}</p>
+          </div>
+        </div>
+      `;
+    } else {
+      dashboardContent.innerHTML = `<p class="error">Error al cargar métricas: ${res.message || 'Desconocido'}</p>`;
+    }
+  } catch (e) {
+    dashboardContent.innerHTML = '<p class="error">Error de conexión al cargar el dashboard.</p>';
+  }
 }
 
 // Session Persistence

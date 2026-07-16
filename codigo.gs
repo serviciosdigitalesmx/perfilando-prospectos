@@ -254,6 +254,50 @@ function finishCall(data) {
   return { success: true };
 }
 
+function getDashboardMetrics() {
+  const sheet = getSheet(HOJAS.PROSPECTOS);
+  const data = sheet.getDataRange().getValues();
+  const header = data[0];
+  
+  const estadoIdx = header.indexOf('Estado');
+  const interesIdx = header.indexOf('Interés');
+  const ultimaIdx = header.indexOf('Última llamada');
+  
+  if (estadoIdx === -1) return { success: false, message: 'Faltan columnas de seguimiento' };
+  
+  let llamadasHoy = 0;
+  let interesAlto = 0;
+  let pendientes = 0;
+  
+  const today = new Date();
+  const todayStr = today.toDateString();
+  
+  for (let i = 1; i < data.length; i++) {
+    const estado = (data[i][estadoIdx] || '').toString().trim();
+    const interes = (data[i][interesIdx] || '').toString().trim();
+    const ultima = data[i][ultimaIdx];
+    
+    if (estado === 'Pendiente' || estado === '') {
+      pendientes++;
+    }
+    
+    if (interes === 'Alto') {
+      interesAlto++;
+    }
+    
+    if (ultima instanceof Date) {
+      if (ultima.toDateString() === todayStr && estado !== 'Pendiente' && estado !== '') {
+        llamadasHoy++;
+      }
+    }
+  }
+  
+  return {
+    success: true,
+    metrics: { llamadasHoy, interesAlto, pendientes }
+  };
+}
+
 // ============================================================
 // 4. MANEJADORES DE LA API
 // ============================================================
@@ -272,6 +316,7 @@ function doGet(e) {
       case 'getProspect': response = getNextProspect(params.idUsuario); break;
       case 'releaseProspect': response = releaseProspect(params.idProspecto, params.idUsuario); break;
       case 'getConfig': response = getConfig(); break;
+      case 'getDashboardMetrics': response = getDashboardMetrics(); break;
       case 'getNodes':
         const nodeSheet = getSheet(HOJAS.NODOS);
         const nodeData = nodeSheet.getDataRange().getValues();
