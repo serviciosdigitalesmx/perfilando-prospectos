@@ -1,448 +1,384 @@
-// URL of your deployed Google Apps Script Web App
-const API_URL = "https://script.google.com/macros/s/AKfycbyqwFneV1aBz7nHHQKjmZ1gdu3RzXbxli8_VTU1UhQp-ZCCxsIxmeXKZ_b1pBIlxkwMUg/exec";
+// Configuración
+const API_URL = "https://script.google.com/macros/s/AKfycby5t4c1F-Q1Z2L4eS9i-eP4-E3qYyv-iP9oV4g14l3o4B4-7i0r1mFj8q/exec"; // ¡Reemplázame!
 
-// Application State
-let state = {
+// Estado Global
+const state = {
   user: null,
   prospect: null,
   nodes: [],
-  config: {}
+  callStartTime: null
 };
 
 // DOM Elements
-const views = {
-  login: document.getElementById('login-view'),
-  main: document.getElementById('main-view'),
-  dashboard: document.getElementById('dashboard-view')
-};
-
+const views = document.querySelectorAll('.view');
+const mainHeader = document.getElementById('main-header');
+const userNameDisplay = document.getElementById('user-name');
+const userRoleDisplay = document.getElementById('user-role');
 const loginForm = document.getElementById('login-form');
 const loginError = document.getElementById('login-error');
-const userNameDisplay = document.getElementById('user-name');
-const dashboardBtn = document.getElementById('dashboard-btn');
-const backToMainBtn = document.getElementById('back-to-main');
-const prospectContainer = document.getElementById('prospect-container');
-const flowContainer = document.getElementById('flow-container');
-const actionButtonsContainer = document.getElementById('action-buttons');
 
-// Helper for API Calls
-async function apiCall(action, data = {}, method = 'GET') {
+// Promotor Views
+const promoterIdle = document.getElementById('promoter-idle');
+const promoterActive = document.getElementById('promoter-active');
+const promoterStatusMsg = document.getElementById('promoter-status-msg');
+const btnNextCall = document.getElementById('btn-next-call');
+
+// Prospect Fields
+const tNombre = document.getElementById('t-nombre');
+const tTelefono = document.getElementById('t-telefono');
+const tIntentos = document.getElementById('t-intentos');
+const nodeText = document.getElementById('node-text');
+const nodeButtons = document.getElementById('node-buttons');
+
+// Modals
+const finishCallModal = document.getElementById('finish-call-modal');
+const finishCallForm = document.getElementById('finish-call-form');
+
+// API Wrapper
+async function apiCall(action, params = {}, method = 'GET') {
   try {
     let url = `${API_URL}?action=${action}`;
-    const options = {
-      method,
-      headers: {
-        'Accept': 'application/json'
-      }
+    let options = {
+      redirect: "follow",
     };
 
-    if (method === 'GET') {
-      const params = new URLSearchParams(data);
-      if (Object.keys(data).length) {
-        url += `&${params.toString()}`;
-      }
+    if (method === 'POST') {
+      options.method = 'POST';
+      options.body = JSON.stringify({ action, ...params });
+      options.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
     } else {
-      options.body = JSON.stringify({ action, ...data });
+      Object.keys(params).forEach(key => {
+        url += `&${key}=${encodeURIComponent(params[key])}`;
+      });
     }
 
-    // Use mode 'cors' usually, though some GAS deployments require no-cors/jsonp if restricted
     const response = await fetch(url, options);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const result = await response.json();
-    if (result.error) {
-      throw new Error(result.error);
-    }
-    return result;
+    return await response.json();
   } catch (error) {
-    console.error("API Call Failed:", error);
+    console.error("API Error:", error);
     throw error;
   }
 }
 
-// UI Management
-function showView(viewName) {
-  Object.values(views).forEach(v => {
-    if (v) v.classList.remove('active');
-  });
-  if (views[viewName]) {
-    views[viewName].classList.add('active');
-  }
-}
-
-function setLoading(isLoading, elementId = null) {
-  const overlayId = 'loading-overlay';
-  let overlay = document.getElementById(overlayId);
-  if (isLoading) {
-    if (!overlay) {
-      overlay = document.createElement('div');
-      overlay.id = overlayId;
-      overlay.className = 'loading-overlay';
-      overlay.innerHTML = '<div class="spinner"></div>';
-      document.body.appendChild(overlay);
-    }
-    overlay.style.display = 'flex';
-  } else {
-    if (overlay) overlay.style.display = 'none';
-  }
-}
-
-function showNotification(message, isError = false) {
-  const notif = document.createElement('div');
-  notif.className = `notification ${isError ? 'error' : 'success'}`;
-  notif.textContent = message;
-  document.body.appendChild(notif);
+// Loading & Notifications
+function showNotification(msg, isError = false) {
+  const div = document.createElement('div');
+  div.className = `notification ${isError ? 'error' : ''}`;
+  div.textContent = msg;
+  document.body.appendChild(div);
   setTimeout(() => {
-    notif.style.opacity = '0';
-    setTimeout(() => notif.remove(), 300);
+    div.style.opacity = '0';
+    setTimeout(() => div.remove(), 300);
   }, 3000);
 }
 
-// Authentication
+// Navigation
+function showView(viewId) {
+  views.forEach(v => v.classList.remove('active'));
+  document.getElementById(viewId).classList.add('active');
+  
+  if (viewId !== 'login-view') {
+    mainHeader.style.display = 'flex';
+  } else {
+    mainHeader.style.display = 'none';
+  }
+}
+
+// Auth
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const email = document.getElementById('email').value;
   const password = document.getElementById('password').value;
+  
+  const submitBtn = loginForm.querySelector('button');
+  submitBtn.textContent = 'Cargando...';
+  submitBtn.disabled = true;
   loginError.textContent = '';
-  setLoading(true);
 
   try {
     const res = await apiCall('login', { usuario: email, password });
     if (res.success) {
-      state.user = {
-        id: res.id,
-        usuario: res.usuario,
-        rol: res.rol
-      };
+      state.user = { id: res.id, usuario: res.usuario, rol: res.rol };
       localStorage.setItem('dialer_user', JSON.stringify(state.user));
-      userNameDisplay.textContent = state.user.usuario;
-      showNotification('Inicio de sesión exitoso');
-      await loadInitialData();
-      showView('main');
+      initUserSession();
     } else {
       loginError.textContent = res.message || 'Error de autenticación';
     }
   } catch (error) {
     loginError.textContent = 'Error de red al conectar con el servidor.';
   } finally {
-    setLoading(false);
+    submitBtn.textContent = 'Iniciar Sesión';
+    submitBtn.disabled = false;
   }
 });
 
-// Initialization
-async function loadInitialData() {
-  try {
-    const [configRes, nodesRes] = await Promise.all([
-      apiCall('getConfig'),
-      apiCall('getNodes')
-    ]);
-    
-    if (nodesRes && nodesRes.success) {
-      state.nodes = nodesRes.nodes;
-    }
-    
-    // Auto fetch prospect if available
-    await fetchProspect();
-  } catch (error) {
-    showNotification('Error cargando configuración', true);
+function logout() {
+  localStorage.removeItem('dialer_user');
+  state.user = null;
+  showView('login-view');
+}
+
+// Init based on role
+async function initUserSession() {
+  userNameDisplay.textContent = state.user.usuario;
+  userRoleDisplay.textContent = state.user.rol.toUpperCase();
+  
+  if (state.user.rol === 'admin') {
+    userRoleDisplay.className = 'badge badge-success';
+    showView('admin-view');
+    loadDashboard();
+    // Heartbeat admin
+    setInterval(() => apiCall('logActivity', { idUsuario: state.user.id }, 'POST'), 60000);
+  } else {
+    userRoleDisplay.className = 'badge badge-warning';
+    showView('promoter-view');
+    // Cargar nodos una sola vez
+    const res = await apiCall('getNodes');
+    if (res.success) state.nodes = res.nodes;
+    resetPromoterUI();
   }
 }
 
-// Prospect Management
-async function fetchProspect() {
-  setLoading(true);
+// ----------------------------------------------------
+// PROMOTER LOGIC
+// ----------------------------------------------------
+
+function resetPromoterUI() {
+  promoterActive.style.display = 'none';
+  promoterIdle.style.display = 'block';
+  btnNextCall.textContent = 'Siguiente Llamada';
+  btnNextCall.disabled = false;
+}
+
+async function fetchNextProspect() {
+  btnNextCall.textContent = 'Buscando...';
+  btnNextCall.disabled = true;
+  promoterStatusMsg.textContent = 'Conectando con el servidor...';
+  
   try {
     const res = await apiCall('getProspect', { idUsuario: state.user.id });
-    if (res.success && res.prospecto) {
-      state.prospect = res.prospecto;
-      renderProspect(state.prospect.taller);
-      renderFlow();
-      renderActionButtons();
-    } else {
-      prospectContainer.innerHTML = `<div class="empty-state">
-        <h2>${res.message || 'No hay prospectos'}</h2>
-        <button class="btn primary-btn" onclick="fetchProspect()">Buscar prospectos</button>
-      </div>`;
-      flowContainer.innerHTML = '';
-      actionButtonsContainer.innerHTML = '';
-    }
-  } catch (error) {
-    showNotification('Error al obtener prospecto', true);
-  } finally {
-    setLoading(false);
-  }
-}
-
-function renderProspect(taller) {
-  if (!taller) return;
-  prospectContainer.innerHTML = `
-    <div class="card glass">
-      <div class="card-header">
-        <h2 class="taller-title">${taller.nombre || 'Taller sin nombre'}</h2>
-        <span class="badge ${taller.confianza === 'Alta' ? 'badge-success' : 'badge-warning'}">${taller.confianza || 'Sin calificar'}</span>
-      </div>
-      <div class="card-body grid-info">
-        <div class="info-item"><span class="label">Actividad:</span> <span>${taller.actividad || '-'}</span></div>
-        <div class="info-item"><span class="label">Teléfono:</span> <span class="highlight">${taller.telefono || '-'}</span></div>
-        <div class="info-item"><span class="label">Dirección:</span> <span>${taller.direccion || ''}, ${taller.municipio || ''}, ${taller.entidad || ''}</span></div>
-        <div class="info-item"><span class="label">Personal:</span> <span>${taller.personal || '-'}</span></div>
-      </div>
-    </div>
-  `;
-}
-
-function renderFlow() {
-  if (!state.nodes || state.nodes.length === 0) {
-    flowContainer.innerHTML = '<p class="text-muted">No hay guión de llamadas configurado.</p>';
-    return;
-  }
-  
-  // Initially render the first node (assuming index 0 is start)
-  const initialNode = state.nodes[0];
-  flowContainer.innerHTML = `
-    <div class="flow-card glass" id="node-active">
-      <h3>Guión de Llamada</h3>
-      <div class="node-content">
-        <p>${initialNode.texto || 'Comienza la conversación'}</p>
-      </div>
-      <div class="node-actions" id="current-node-buttons">
-      </div>
-    </div>
-  `;
-  renderNodeButtons(initialNode);
-}
-
-function renderNodeButtons(node) {
-  const btnContainer = document.getElementById('current-node-buttons');
-  btnContainer.innerHTML = '';
-  
-  if (node.botones && Array.isArray(node.botones)) {
-    node.botones.forEach(btn => {
-      const button = document.createElement('button');
-      button.className = 'btn secondary-btn flow-btn';
-      button.textContent = btn.texto || btn.label;
-      button.onclick = () => handleNodeAction(node, btn);
-      btnContainer.appendChild(button);
-    });
-  } else {
-    // Default action if no buttons configured
-    const button = document.createElement('button');
-    button.className = 'btn secondary-btn flow-btn';
-    button.textContent = 'Avanzar / Terminar';
-    button.onclick = () => document.getElementById('finish-call-modal').classList.add('active');
-    btnContainer.appendChild(button);
-  }
-}
-
-async function handleNodeAction(node, btnConfig) {
-  try {
-    // Log step to backend (non-blocking)
-    apiCall('saveStep', {
-      idProspecto: state.prospect.id,
-      idUsuario: state.user.id,
-      nodoId: node.id || node.ID || 'unknown',
-      payload: btnConfig.payload || btnConfig.texto || btnConfig.label,
-      timestamp: new Date().toISOString()
-    }, 'POST').catch(e => console.error("Error saving step", e));
-    
-    // Navigate to next node
-    const nextId = btnConfig.siguiente || btnConfig.next;
-    if (nextId) {
-      const nextNode = state.nodes.find(n => (n.id || n.ID) === nextId);
-      if (nextNode) {
-        document.querySelector('.node-content p').textContent = nextNode.texto;
-        renderNodeButtons(nextNode);
-      } else {
-        showNotification('Fin del guión alcanzado');
-      }
-    } else {
-      showNotification('Fin de la ramificación.');
-    }
-  } catch (error) {
-    console.error(error);
-  }
-}
-
-function renderActionButtons() {
-  const mapsLink = state.prospect.taller.maps || `https://maps.google.com/?q=${state.prospect.taller.lat},${state.prospect.taller.lng}`;
-  const phone = state.prospect.taller.telefono;
-  
-  actionButtonsContainer.innerHTML = `
-    <div class="quick-actions">
-      ${phone ? `<a href="tel:${phone}" class="btn primary-btn action-btn"><i class="icon">📞</i> Llamar</a>` : ''}
-      <a href="${mapsLink}" target="_blank" class="btn warning-btn action-btn"><i class="icon">📍</i> Maps</a>
-      <button class="btn danger-btn action-btn" onclick="openFinishCallModal()">Terminar Llamada</button>
-      <button class="btn outline-btn action-btn" onclick="releaseProspect()">Soltar Prospecto</button>
-    </div>
-  `;
-}
-
-// Prospect Actions
-async function releaseProspect() {
-  if (!state.prospect) return;
-  setLoading(true);
-  try {
-    const res = await apiCall('releaseProspect', {
-      idUsuario: state.user.id,
-      idProspecto: state.prospect.id
-    });
     if (res.success) {
-      showNotification('Prospecto liberado');
-      state.prospect = null;
-      prospectContainer.innerHTML = '';
-      flowContainer.innerHTML = '';
-      actionButtonsContainer.innerHTML = '';
-      setTimeout(fetchProspect, 1000);
+      state.prospect = res.prospecto;
+      state.callStartTime = new Date();
+      startCallUI();
     } else {
-      showNotification(res.message || 'Error al liberar', true);
+      promoterStatusMsg.textContent = res.message || 'No hay prospectos en este momento.';
+      btnNextCall.textContent = 'Reintentar Buscar';
+      btnNextCall.disabled = false;
     }
-  } catch (e) {
-    showNotification('Error de conexión', true);
-  } finally {
-    setLoading(false);
+  } catch (error) {
+    promoterStatusMsg.textContent = 'Error de conexión. Intenta de nuevo.';
+    btnNextCall.textContent = 'Reintentar';
+    btnNextCall.disabled = false;
   }
 }
 
-function openFinishCallModal() {
-  // We'll append a modal to body if it doesn't exist
-  let modal = document.getElementById('finish-call-modal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'finish-call-modal';
-    modal.className = 'modal-overlay';
-    modal.innerHTML = `
-      <div class="modal-content glass">
-        <h2>Resumen de Llamada</h2>
-        <form id="finish-call-form">
-          <div class="form-group">
-            <label>Estado Final</label>
-            <select id="fc-estado" required>
-              <option value="Cerrado">Cerrado (Éxito)</option>
-              <option value="No contesta">No contesta</option>
-              <option value="No interesado">No interesado</option>
-              <option value="Volver a llamar">Volver a llamar</option>
-              <option value="Número equivocado">Número equivocado</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Nivel de Interés</label>
-            <select id="fc-interes">
-              <option value="Alto">Alto</option>
-              <option value="Medio">Medio</option>
-              <option value="Bajo">Bajo</option>
-              <option value="Nulo">Nulo</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Notas de la Llamada</label>
-            <textarea id="fc-notas" rows="3" placeholder="Detalles importantes de la conversación..."></textarea>
-          </div>
-          <div class="form-group">
-            <label>Próxima Acción / Seguimiento</label>
-            <input type="text" id="fc-accion" placeholder="Ej. Agendar demo, Enviar correo...">
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn outline-btn" onclick="document.getElementById('finish-call-modal').classList.remove('active')">Cancelar</button>
-            <button type="submit" class="btn primary-btn">Guardar y Finalizar</button>
-          </div>
-        </form>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    
-    document.getElementById('finish-call-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      await finishCall();
+function startCallUI() {
+  promoterIdle.style.display = 'none';
+  promoterActive.style.display = 'block';
+  promoterStatusMsg.textContent = '';
+  
+  tNombre.textContent = state.prospect.nombre || 'Desconocido';
+  tTelefono.textContent = state.prospect.telefono || 'Sin teléfono';
+  tIntentos.textContent = state.prospect.intentos || '0';
+  
+  // Buscar nodo inicial
+  const startNode = state.nodes.find(n => n.id === 'inicio' || n.ID === 'inicio') || state.nodes[0];
+  if (startNode) renderNode(startNode);
+}
+
+function renderNode(node) {
+  nodeText.textContent = node.texto || node.Texto || 'Sin texto';
+  nodeButtons.innerHTML = '';
+  
+  const botones = node.botones || [];
+  if (botones.length === 0) {
+    // Si no hay botones, sugerimos finalizar
+    const btn = document.createElement('button');
+    btn.className = 'btn primary-btn flow-btn';
+    btn.textContent = 'Finalizar Flujo';
+    btn.onclick = openFinishModal;
+    nodeButtons.appendChild(btn);
+  } else {
+    botones.forEach(btnConfig => {
+      const btn = document.createElement('button');
+      btn.className = 'btn secondary-btn flow-btn';
+      btn.textContent = btnConfig.texto || btnConfig.label;
+      btn.onclick = () => handleNodeAction(node, btnConfig);
+      nodeButtons.appendChild(btn);
     });
   }
-  modal.classList.add('active');
 }
 
-async function finishCall() {
-  const estado = document.getElementById('fc-estado').value;
-  const interes = document.getElementById('fc-interes').value;
-  const notas = document.getElementById('fc-notas').value;
-  const accion = document.getElementById('fc-accion').value;
-  
-  setLoading(true);
-  try {
-    // Fire and forget finishCall (don't await it to avoid blocking the user)
-    apiCall('finishCall', {
-      idProspecto: state.prospect.id,
-      estadoFinal: estado,
-      interes: interes,
-      notas: notas,
-      proximaAccion: accion,
-      seguimiento: new Date().toISOString()
-    }, 'POST').catch(e => console.error('Error in background finishCall:', e));
-    
-    // Inmediately prepare UI for next prospect
-    showNotification('Llamada guardada, buscando siguiente prospecto...');
-    document.getElementById('finish-call-modal').classList.remove('active');
-    document.getElementById('finish-call-form').reset();
-    state.prospect = null;
-    
-    // Fetch next prospect without waiting for the save to finish
-    await fetchProspect();
-  } catch (e) {
-    showNotification('Error de conexión', true);
-    setLoading(false);
+function handleNodeAction(currentNode, btnConfig) {
+  // 1. Guardar log inmutable de la conversación
+  apiCall('saveStep', {
+    idUsuario: state.user.id,
+    idProspecto: state.prospect.id,
+    nodoId: currentNode.id || currentNode.ID,
+    payload: btnConfig.payload || btnConfig.texto || btnConfig.label
+  }, 'POST').catch(e => console.error(e));
+
+  // 2. Navegar al siguiente nodo o abrir modal de finalizar
+  const nextId = btnConfig.siguiente || btnConfig.next;
+  if (nextId) {
+    const nextNode = state.nodes.find(n => (n.id || n.ID) === nextId);
+    if (nextNode) {
+      renderNode(nextNode);
+    } else {
+      openFinishModal();
+    }
+  } else {
+    openFinishModal();
   }
 }
 
-// Dashboard Navigation
-dashboardBtn.addEventListener('click', () => {
-  showView('dashboard');
-  loadDashboardData();
+function openFinishModal() {
+  finishCallModal.classList.add('active');
+}
+
+finishCallForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  
+  const estado = document.getElementById('estado-final').value;
+  const interes = document.getElementById('nivel-interes').value;
+  const fechaSeguimiento = document.getElementById('fecha-seguimiento').value;
+  const notas = document.getElementById('notas-final').value;
+  
+  const duracionSegundos = Math.floor((new Date() - state.callStartTime) / 1000);
+  
+  const submitBtn = finishCallForm.querySelector('button[type="submit"]');
+  submitBtn.textContent = 'Guardando...';
+  submitBtn.disabled = true;
+  
+  // Guardado asíncrono
+  apiCall('finishCall', {
+    idUsuario: state.user.id,
+    idProspecto: state.prospect.id,
+    duracionSegundos: duracionSegundos,
+    estadoFinal: estado,
+    interes: interes,
+    seguimiento: fechaSeguimiento,
+    proximaAccion: estado === 'Interesado' ? 'Llamar a interesado' : '', // simplificado
+    notas: notas
+  }, 'POST').catch(e => console.error(e));
+  
+  // Preparar UI inmediatamente
+  showNotification('Llamada guardada con éxito.');
+  finishCallModal.classList.remove('active');
+  finishCallForm.reset();
+  submitBtn.textContent = 'Guardar y Siguiente';
+  submitBtn.disabled = false;
+  
+  // Volver y pedir el siguiente automáticamente
+  resetPromoterUI();
+  fetchNextProspect();
 });
 
-backToMainBtn.addEventListener('click', () => {
-  showView('main');
-});
-
-async function loadDashboardData() {
-  const dashboardContent = document.getElementById('dashboard-content');
-  dashboardContent.innerHTML = '<div class="loading-overlay" style="position:relative;height:200px;"><div class="spinner"></div></div>';
+// ----------------------------------------------------
+// ADMIN LOGIC (DASHBOARD)
+// ----------------------------------------------------
+async function loadDashboard() {
+  const content = document.getElementById('dashboard-content');
+  content.innerHTML = '<div style="text-align:center; padding: 4rem;"><p>Cargando métricas en vivo...</p></div>';
   
   try {
     const res = await apiCall('getDashboardMetrics');
     if (res.success) {
-      dashboardContent.innerHTML = `
-        <div class="dashboard-grid">
-          <div class="kpi-card glass">
-            <h3>Llamadas Hoy</h3>
-            <p class="kpi-value">${res.metrics.llamadasHoy}</p>
+      const m = res.metrics;
+      
+      let html = `
+        <!-- Conexiones -->
+        <div class="dashboard-grid" style="margin-bottom:2rem;">
+          <div class="card glass" style="text-align:center">
+            <h3>Conectados</h3><p class="kpi-value highlight-success">${m.conectados}</p>
           </div>
-          <div class="kpi-card glass">
-            <h3>Interés Alto</h3>
-            <p class="kpi-value highlight-success">${res.metrics.interesAlto}</p>
+          <div class="card glass" style="text-align:center">
+            <h3>Activos</h3><p class="kpi-value" style="color:var(--primary)">${m.activos}</p>
           </div>
-          <div class="kpi-card glass">
-            <h3>Pendientes</h3>
-            <p class="kpi-value text-muted">${res.metrics.pendientes}</p>
+          <div class="card glass" style="text-align:center">
+            <h3>Inactivos (+10m)</h3><p class="kpi-value text-muted">${m.inactivos}</p>
           </div>
         </div>
+        
+        <!-- Global Hoy -->
+        <div class="card glass" style="margin-bottom:2rem;">
+          <h2 style="margin-bottom:1rem; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:1rem;">Resultados de Hoy</h2>
+          <div class="dashboard-grid">
+            <div style="text-align:center">
+              <span class="label">Total Llamadas</span>
+              <p class="kpi-value">${m.llamadasHoy}</p>
+            </div>
+            <div style="text-align:center">
+              <span class="label">Interesados (Alto/Medio)</span>
+              <p class="kpi-value highlight-success">${m.interesados}</p>
+            </div>
+            <div style="text-align:center">
+              <span class="label">Éxitos / Ventas</span>
+              <p class="kpi-value highlight-success">${m.exitos}</p>
+            </div>
+            <div style="text-align:center">
+              <span class="label">Conversión</span>
+              <p class="kpi-value" style="color:var(--warning)">${m.conversion}</p>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Líderes -->
+        <div class="card glass" style="margin-bottom:2rem;">
+          <h2 style="margin-bottom:1rem;">Productividad por Promotor</h2>
+          <div style="display:flex; flex-direction:column; gap:1rem;">
       `;
-    } else {
-      dashboardContent.innerHTML = `<p class="error">Error al cargar métricas: ${res.message || 'Desconocido'}</p>`;
+      
+      Object.keys(m.promotoresStats).forEach(email => {
+        const p = m.promotoresStats[email];
+        html += `
+            <div style="background:rgba(255,255,255,0.05); padding: 1rem; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
+              <strong>${email}</strong>
+              <div style="display:flex; gap: 2rem;">
+                <span>📞 ${p.llamadas} llamas</span>
+                <span style="color:var(--success)">🔥 ${p.interesados} inter.</span>
+                <span style="color:var(--warning)">⭐ ${p.exitos} éxito</span>
+              </div>
+            </div>
+        `;
+      });
+      if(Object.keys(m.promotoresStats).length === 0) {
+        html += '<p class="text-muted">No hay llamadas registradas hoy.</p>';
+      }
+      
+      html += `
+          </div>
+        </div>
+        
+        <!-- Base de Datos -->
+        <div class="dashboard-grid">
+           <div class="card glass" style="text-align:center">
+             <h3>Prospectos Pendientes</h3>
+             <p class="kpi-value text-muted">${m.pendientes}</p>
+           </div>
+           <div class="card glass" style="text-align:center">
+             <h3>Total Base Datos</h3>
+             <p class="kpi-value text-muted">${m.totales}</p>
+           </div>
+        </div>
+      `;
+      
+      content.innerHTML = html;
     }
-  } catch (e) {
-    dashboardContent.innerHTML = '<p class="error">Error de conexión al cargar el dashboard.</p>';
+  } catch(e) {
+    content.innerHTML = '<p class="error" style="text-align:center">Error al cargar datos.</p>';
   }
 }
 
-// Session Persistence
-window.addEventListener('DOMContentLoaded', async () => {
+// Check existing session
+window.addEventListener('DOMContentLoaded', () => {
   const savedUser = localStorage.getItem('dialer_user');
   if (savedUser) {
     try {
       state.user = JSON.parse(savedUser);
-      userNameDisplay.textContent = state.user.usuario;
-      showView('main');
-      await loadInitialData();
+      initUserSession();
     } catch (e) {
-      console.error("Invalid session data");
       localStorage.removeItem('dialer_user');
     }
   }

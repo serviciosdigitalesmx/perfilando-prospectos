@@ -2,12 +2,15 @@
 // 1. CONFIGURACIÓN DE HOJAS
 // ============================================================
 const HOJAS = {
-  DENUE: 'Alta confianza nacional',
-  PROSPECTOS: 'Alta confianza nacional',
-  CONVERSACIONES: 'Conversaciones',
+  DENUE: 'DENUE',
+  PROSPECTOS: 'Prospectos',
   USUARIOS: 'Usuarios',
+  CONVERSACIONES: 'Conversaciones',
+  LLAMADAS: 'Llamadas',
+  SEGUIMIENTOS: 'Seguimientos',
   NODOS: 'Nodos',
-  CONFIG: 'Configuración'
+  CONFIG: 'Configuración',
+  SESIONES: 'Sesiones'
 };
 
 // ============================================================
@@ -15,8 +18,7 @@ const HOJAS = {
 // ============================================================
 
 function getSheet(name) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  return ss.getSheetByName(name);
+  return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
 }
 
 function getConfig() {
@@ -25,9 +27,7 @@ function getConfig() {
   const data = sheet.getDataRange().getValues();
   const config = {};
   data.forEach(row => {
-    const key = row[0];
-    const value = row[1];
-    if (key) config[key] = value;
+    if (row[0]) config[row[0]] = row[1];
   });
   return config;
 }
@@ -36,35 +36,101 @@ function generateUUID() {
   return Utilities.getUuid();
 }
 
-function findRowByUUID(sheet, uuidColumn, uuid) {
+function findRowByCol(sheet, colIndex, value) {
   const data = sheet.getDataRange().getValues();
   for (let i = 0; i < data.length; i++) {
-    if (data[i][uuidColumn] === uuid) {
-      return i + 1; // 1-indexed row number
+    if (data[i][colIndex] === value) {
+      return i + 1;
     }
   }
   return -1;
 }
 
+function logActivity(idUsuario, isLlamada = false) {
+  const sheet = getSheet(HOJAS.SESIONES);
+  if (!sheet) return;
+  const data = sheet.getDataRange().getValues();
+  const userIdx = data[0].indexOf('Usuario');
+  const activeIdx = data[0].indexOf('Ultima_Actividad');
+  const llamadaIdx = data[0].indexOf('Llamada_Actual');
+  
+  if (userIdx === -1 || activeIdx === -1) return;
+  
+  const now = new Date();
+  let row = -1;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][userIdx] === idUsuario) {
+      row = i + 1;
+      break;
+    }
+  }
+  
+  if (row !== -1) {
+    sheet.getRange(row, activeIdx + 1).setValue(now);
+    if (isLlamada && llamadaIdx !== -1) {
+      sheet.getRange(row, llamadaIdx + 1).setValue(now);
+    }
+  } else {
+    // Si no existe sesión, creamos una
+    const newRow = [];
+    data[0].forEach(h => newRow.push(''));
+    newRow[userIdx] = idUsuario;
+    newRow[activeIdx] = now;
+    if (isLlamada && llamadaIdx !== -1) newRow[llamadaIdx] = now;
+    sheet.appendRow(newRow);
+  }
+}
+
 // ============================================================
-// 3. FUNCIONES DE NEGOCIO
+// 3. FUNCIONES DE NEGOCIO (EL CEREBRO)
 // ============================================================
 
-function handleLogin(usuario, password) {
+function handleLogin(correo, password) {
   const sheet = getSheet(HOJAS.USUARIOS);
   const data = sheet.getDataRange().getValues();
   const header = data[0];
-  const userCol = header.indexOf('Usuario');
-  const passCol = header.indexOf('Contraseña');
+  const userCol = header.indexOf('Correo');
+  const passCol = header.indexOf('Password');
   const rolCol = header.indexOf('Rol');
   const idCol = header.indexOf('ID');
+  const nameCol = header.indexOf('Nombre');
   
   for (let i = 1; i < data.length; i++) {
-    if (data[i][userCol] === usuario && data[i][passCol] === password) {
+    if (data[i][userCol] === correo && data[i][passCol] === password) {
+      const idUsuario = data[i][idCol];
+      
+      // Registrar Sesión
+      const sesSheet = getSheet(HOJAS.SESIONES);
+      const sesData = sesSheet.getDataRange().getValues();
+      const sUserId = sesData[0].indexOf('Usuario');
+      const sLogin = sesData[0].indexOf('Login');
+      const sActive = sesData[0].indexOf('Ultima_Actividad');
+      const sEstado = sesData[0].indexOf('Estado');
+      
+      let sRow = -1;
+      for(let j=1; j<sesData.length; j++){
+        if(sesData[j][sUserId] === idUsuario) { sRow = j+1; break; }
+      }
+      
+      const now = new Date();
+      if(sRow !== -1) {
+        sesSheet.getRange(sRow, sLogin+1).setValue(now);
+        sesSheet.getRange(sRow, sActive+1).setValue(now);
+        sesSheet.getRange(sRow, sEstado+1).setValue('Conectado');
+      } else {
+        const nr = [];
+        sesData[0].forEach(()=>nr.push(''));
+        nr[sUserId] = idUsuario;
+        nr[sLogin] = now;
+        nr[sActive] = now;
+        nr[sEstado] = 'Conectado';
+        sesSheet.appendRow(nr);
+      }
+      
       return {
         success: true,
-        id: data[i][idCol],
-        usuario: data[i][userCol],
+        id: idUsuario,
+        usuario: data[i][nameCol] || correo,
         rol: data[i][rolCol]
       };
     }
@@ -73,267 +139,352 @@ function handleLogin(usuario, password) {
 }
 
 function getNextProspect(idUsuario) {
+  logActivity(idUsuario);
+  
   const config = getConfig();
   const maxIntents = parseInt(config.reintentos_maximos) || 3;
-  const lockTimeout = parseInt(config.tiempo_bloqueo_minutos) || 5; // minutos
-
-  const prospectSheet = getSheet(HOJAS.PROSPECTOS);
-  const pHeader = prospectSheet.getDataRange().getValues()[0];
-  
-  // Columnas de seguimiento
-  const idIdx = pHeader.indexOf('ID');
-  const estadoIdx = pHeader.indexOf('Estado');
-  const intentoIdx = pHeader.indexOf('Intento');
-  const bloqueadoIdx = pHeader.indexOf('Bloqueado por');
-  const ultimaIdx = pHeader.indexOf('Última llamada');
-  
-  // Si no existen las columnas, asumimos que no se ha corrido prepararHojaUnica
-  if (idIdx === -1 || estadoIdx === -1) {
-    return { success: false, message: 'Faltan columnas de seguimiento. Por favor ejecuta prepararHojaUnica().' };
-  }
-  
-  // Índices de taller
-  const denueIdIdx = pHeader.indexOf('ID DENUE');
-  const nombreIdx = pHeader.indexOf('Nombre del establecimiento');
-  const telefonoIdx = pHeader.indexOf('Teléfono');
-  const entidadIdx = pHeader.indexOf('Entidad');
-  const municipioIdx = pHeader.indexOf('Municipio');
-  const localidadIdx = pHeader.indexOf('Localidad');
-  const actividadIdx = pHeader.indexOf('Actividad económica');
-  const personalIdx = pHeader.indexOf('Personal ocupado');
-  const correoIdx = pHeader.indexOf('Correo');
-  const sitioIdx = pHeader.indexOf('Sitio web');
-  const direccionIdx = pHeader.indexOf('Dirección');
-  const cpIdx = pHeader.indexOf('Código postal');
-  const latIdx = pHeader.indexOf('Latitud');
-  const lngIdx = pHeader.indexOf('Longitud');
-  const mapsIdx = pHeader.indexOf('Google Maps');
-  const whatsIdx = pHeader.indexOf('WhatsApp candidato');
-  const fechaIdx = pHeader.indexOf('Fecha de alta DENUE');
-  const confianzaIdx = pHeader.indexOf('Confianza');
-  const notaIdx = pHeader.indexOf('Nota de verificación');
-
-  const pData = prospectSheet.getDataRange().getValues();
+  const lockMins = parseInt(config.tiempo_bloqueo_minutos) || 5;
   const now = new Date();
+
+  const sheet = getSheet(HOJAS.PROSPECTOS);
+  const data = sheet.getDataRange().getValues();
+  const header = data[0];
   
-  for (let i = 1; i < pData.length; i++) {
-    const estado = (pData[i][estadoIdx] || '').toString().trim();
-    const bloqueadoPor = pData[i][bloqueadoIdx];
-    const rawIntento = pData[i][intentoIdx];
-    const intentos = (rawIntento === '' || isNaN(parseInt(rawIntento))) ? 0 : parseInt(rawIntento);
+  const idIdx = header.indexOf('ID');
+  const estIdx = header.indexOf('Estado');
+  const asigIdx = header.indexOf('AsignadoA');
+  const resIdx = header.indexOf('ReservadoHasta');
+  const intIdx = header.indexOf('Intentos');
+  
+  let selectedRow = -1;
+  let prospect = null;
+  
+  // Buscar prospecto disponible (Estado Pendiente, y no reservado validamente)
+  for (let i = 1; i < data.length; i++) {
+    const estado = (data[i][estIdx] || '').toString().trim();
+    const reservadoHasta = data[i][resIdx];
+    const intentos = parseInt(data[i][intIdx]) || 0;
     
-    // Verificar bloqueos expirados
-    if (bloqueadoPor && bloqueadoPor !== idUsuario) {
-      const lastCall = pData[i][ultimaIdx];
-      if (lastCall instanceof Date) {
-        const diff = (now - lastCall) / (1000 * 60);
-        if (diff < lockTimeout) continue;
+    // Si la reserva expiró, se puede tomar
+    let isLibre = true;
+    if (reservadoHasta instanceof Date && reservadoHasta > now) {
+      if (data[i][asigIdx] !== idUsuario) {
+        isLibre = false;
       }
     }
     
-    // Tratar vacíos como pendientes
-    const isPendiente = estado === 'Pendiente' || estado === '';
+    const isPendiente = (estado === 'Pendiente' || estado === '');
     
-    if (isPendiente && intentos < maxIntents) {
-      const rowNum = i + 1;
-      const rowRange = prospectSheet.getRange(rowNum, 1, 1, pHeader.length);
-      const rowData = rowRange.getValues()[0];
-      
-      // Actualizar estado en la hoja (todo en memoria)
-      if (estadoIdx !== -1) rowData[estadoIdx] = 'En llamada';
-      if (intentoIdx !== -1) rowData[intentoIdx] = intentos + 1;
-      if (bloqueadoIdx !== -1) rowData[bloqueadoIdx] = idUsuario;
-      if (ultimaIdx !== -1) rowData[ultimaIdx] = now;
-      
-      // Escribir a la hoja en una sola operacion rápida
-      rowRange.setValues([rowData]);
-      
-      // Armar el objeto taller directamente de la misma fila
-      const taller = {
-        idDENUE: denueIdIdx !== -1 ? pData[i][denueIdIdx] : '',
-        nombre: nombreIdx !== -1 ? pData[i][nombreIdx] : '',
-        telefono: telefonoIdx !== -1 ? pData[i][telefonoIdx] : '',
-        entidad: entidadIdx !== -1 ? pData[i][entidadIdx] : '',
-        municipio: municipioIdx !== -1 ? pData[i][municipioIdx] : '',
-        localidad: localidadIdx !== -1 ? pData[i][localidadIdx] : '',
-        actividad: actividadIdx !== -1 ? pData[i][actividadIdx] : '',
-        personal: personalIdx !== -1 ? pData[i][personalIdx] : '',
-        correo: correoIdx !== -1 ? pData[i][correoIdx] : '',
-        sitio: sitioIdx !== -1 ? pData[i][sitioIdx] : '',
-        direccion: direccionIdx !== -1 ? pData[i][direccionIdx] : '',
-        cp: cpIdx !== -1 ? pData[i][cpIdx] : '',
-        lat: latIdx !== -1 ? pData[i][latIdx] : '',
-        lng: lngIdx !== -1 ? pData[i][lngIdx] : '',
-        maps: mapsIdx !== -1 ? pData[i][mapsIdx] : '',
-        whatsapp: whatsIdx !== -1 ? pData[i][whatsIdx] : '',
-        fechaAlta: fechaIdx !== -1 ? pData[i][fechaIdx] : '',
-        confianza: confianzaIdx !== -1 ? pData[i][confianzaIdx] : '',
-        notaVerificacion: notaIdx !== -1 ? pData[i][notaIdx] : ''
+    if (isPendiente && isLibre && intentos < maxIntents) {
+      selectedRow = i;
+      prospect = {
+        id: data[i][idIdx],
+        nombre: data[i][header.indexOf('Nombre')],
+        telefono: data[i][header.indexOf('Telefono')],
+        intentos: intentos,
+        estado: 'En llamada'
       };
-      
-      return {
-        success: true,
-        prospecto: {
-          id: pData[i][idIdx],
-          idDENUE: taller.idDENUE,
-          estado: 'En llamada',
-          intento: intentos + 1,
-          taller: taller
-        }
-      };
+      break;
     }
+  }
+  
+  if (selectedRow !== -1) {
+    // Reservar prospecto
+    const expiration = new Date(now.getTime() + lockMins * 60000);
+    const rowRange = sheet.getRange(selectedRow + 1, 1, 1, header.length);
+    const rowData = rowRange.getValues()[0];
+    
+    rowData[estIdx] = 'En llamada';
+    rowData[asigIdx] = idUsuario;
+    rowData[resIdx] = expiration;
+    rowData[header.indexOf('UltimaLlamada')] = now;
+    
+    rowRange.setValues([rowData]);
+    
+    // Registrar llamada en Sesiones
+    logActivity(idUsuario, true);
+    
+    return { success: true, prospecto: prospect };
   }
   
   return { success: false, message: 'No hay prospectos disponibles' };
 }
 
 function releaseProspect(idProspecto, idUsuario) {
+  logActivity(idUsuario);
+  
   const sheet = getSheet(HOJAS.PROSPECTOS);
-  const header = sheet.getDataRange().getValues()[0];
-  const idIdx = header.indexOf('ID');
-  const bloqueadoIdx = header.indexOf('Bloqueado por');
-  const estadoIdx = header.indexOf('Estado');
+  const data = sheet.getDataRange().getValues();
+  const header = data[0];
+  const row = findRowByCol(sheet, header.indexOf('ID'), idProspecto);
   
-  const row = findRowByUUID(sheet, idIdx, idProspecto);
-  if (row === -1) return { success: false, message: 'Prospecto no encontrado' };
-  
-  const bloqueado = sheet.getRange(row, bloqueadoIdx + 1).getValue();
-  if (bloqueado !== idUsuario) {
-    return { success: false, message: 'No tienes permiso para liberar este prospecto' };
+  if (row !== -1) {
+    const rowRange = sheet.getRange(row, 1, 1, header.length);
+    const rowData = rowRange.getValues()[0];
+    
+    // Si estaba asignado a este usuario, lo liberamos
+    if (rowData[header.indexOf('AsignadoA')] === idUsuario) {
+      rowData[header.indexOf('Estado')] = 'Pendiente';
+      rowData[header.indexOf('ReservadoHasta')] = '';
+      rowData[header.indexOf('AsignadoA')] = '';
+      rowRange.setValues([rowData]);
+    }
   }
-  
-  sheet.getRange(row, estadoIdx + 1).setValue('Pendiente');
-  sheet.getRange(row, bloqueadoIdx + 1).setValue('');
   return { success: true };
 }
 
 function saveConversationStep(data) {
+  logActivity(data.idUsuario);
   const sheet = getSheet(HOJAS.CONVERSACIONES);
   const newRow = [
     generateUUID(),
     data.idProspecto,
     data.idUsuario,
+    new Date(),
     data.nodoId,
     data.payload || '',
-    data.timestamp || new Date(),
-    data.texto || '',
-    data.captura || ''
+    data.notas || ''
   ];
   sheet.appendRow(newRow);
   return { success: true };
 }
 
 function finishCall(data) {
-  const sheet = getSheet(HOJAS.PROSPECTOS);
-  const header = sheet.getDataRange().getValues()[0];
-  const idIdx = header.indexOf('ID');
-  const estadoIdx = header.indexOf('Estado');
-  const notasIdx = header.indexOf('Notas');
-  const interesIdx = header.indexOf('Interés');
-  const accionIdx = header.indexOf('Próxima acción');
-  const segIdx = header.indexOf('Seguimiento');
-  const payloadIdx = header.indexOf('Payload final');
-  const bloqueadoIdx = header.indexOf('Bloqueado por');
+  logActivity(data.idUsuario);
   
-  const row = findRowByUUID(sheet, idIdx, data.idProspecto);
-  if (row === -1) return { success: false, message: 'Prospecto no encontrado' };
+  // 1. Actualizar Prospecto
+  const sheetP = getSheet(HOJAS.PROSPECTOS);
+  const dataP = sheetP.getDataRange().getValues();
+  const headerP = dataP[0];
+  const rowP = findRowByCol(sheetP, headerP.indexOf('ID'), data.idProspecto);
   
-  const rowRange = sheet.getRange(row, 1, 1, header.length);
-  const rowData = rowRange.getValues()[0];
+  let intentos = 0;
+  if (rowP !== -1) {
+    const rRange = sheetP.getRange(rowP, 1, 1, headerP.length);
+    const rData = rRange.getValues()[0];
+    
+    intentos = (parseInt(rData[headerP.indexOf('Intentos')]) || 0) + 1;
+    rData[headerP.indexOf('Intentos')] = intentos;
+    rData[headerP.indexOf('ResultadoFinal')] = data.estadoFinal;
+    rData[headerP.indexOf('NivelInteres')] = data.interes;
+    rData[headerP.indexOf('UltimaLlamada')] = new Date();
+    
+    // Lógica del cerebro: ¿Volver a intentar?
+    const cerrar = ['Cerrado', 'No interesado', 'Número equivocado', 'Exito'];
+    if (cerrar.includes(data.estadoFinal)) {
+      rData[headerP.indexOf('Estado')] = 'Cerrado';
+    } else {
+      // Por defecto, si no es final, vuelve a pendiente para reintento
+      rData[headerP.indexOf('Estado')] = 'Pendiente';
+    }
+    
+    rData[headerP.indexOf('ReservadoHasta')] = '';
+    rData[headerP.indexOf('AsignadoA')] = '';
+    
+    rRange.setValues([rData]);
+  }
   
-  if (estadoIdx !== -1) rowData[estadoIdx] = data.estadoFinal || 'Cerrado';
-  if (notasIdx !== -1) rowData[notasIdx] = data.notas || '';
-  if (interesIdx !== -1) rowData[interesIdx] = data.interes || '';
-  if (accionIdx !== -1) rowData[accionIdx] = data.proximaAccion || '';
-  if (segIdx !== -1) rowData[segIdx] = data.seguimiento || '';
-  if (payloadIdx !== -1) rowData[payloadIdx] = data.payload || '';
-  if (bloqueadoIdx !== -1) rowData[bloqueadoIdx] = '';
+  // 2. Registrar en Llamadas (Inmutable)
+  const sheetL = getSheet(HOJAS.LLAMADAS);
+  const newCall = [
+    generateUUID(),
+    data.idProspecto,
+    data.idUsuario,
+    new Date(new Date().getTime() - (data.duracionSegundos || 0) * 1000), // Inicio calculado
+    new Date(), // Fin
+    data.duracionSegundos || 0,
+    data.estadoFinal,
+    data.interes,
+    data.notas
+  ];
+  sheetL.appendRow(newCall);
   
-  rowRange.setValues([rowData]);
+  // 3. Crear Seguimiento si se solicitó agendar
+  if (data.proximaAccion && data.seguimiento) {
+    const sheetS = getSheet(HOJAS.SEGUIMIENTOS);
+    sheetS.appendRow([
+      data.idProspecto,
+      data.seguimiento, // Fecha
+      data.idUsuario,
+      'Pendiente',
+      data.proximaAccion // Observaciones / Tarea
+    ]);
+  }
   
   return { success: true };
 }
 
 function getDashboardMetrics() {
-  const sheet = getSheet(HOJAS.PROSPECTOS);
-  const data = sheet.getDataRange().getValues();
-  const header = data[0];
+  const sLlamadas = getSheet(HOJAS.LLAMADAS).getDataRange().getValues();
+  const sSesiones = getSheet(HOJAS.SESIONES).getDataRange().getValues();
+  const sProspectos = getSheet(HOJAS.PROSPECTOS).getDataRange().getValues();
   
-  const estadoIdx = header.indexOf('Estado');
-  const interesIdx = header.indexOf('Interés');
-  const ultimaIdx = header.indexOf('Última llamada');
+  const today = new Date().toDateString();
   
-  if (estadoIdx === -1) return { success: false, message: 'Faltan columnas de seguimiento' };
+  // Métricas de Sesiones
+  const hSes = sSesiones[0];
+  const uId = hSes.indexOf('Usuario');
+  const act = hSes.indexOf('Ultima_Actividad');
   
+  let conectados = 0;
+  let inactivos = 0;
+  const now = new Date();
+  
+  for (let i = 1; i < sSesiones.length; i++) {
+    const last = sSesiones[i][act];
+    if (last instanceof Date) {
+      const diffMins = (now - last) / 60000;
+      if (diffMins < 60) conectados++; // Activo hoy
+      if (diffMins > 10 && diffMins < 60) inactivos++;
+    }
+  }
+  
+  // Métricas de Llamadas
+  const hLla = sLlamadas[0];
   let llamadasHoy = 0;
-  let interesAlto = 0;
+  let interesados = 0;
+  let exitos = 0;
+  
+  // Mapeo por promotor
+  const promotoresStats = {};
+  
+  for (let i = 1; i < sLlamadas.length; i++) {
+    const fin = sLlamadas[i][hLla.indexOf('Fin')];
+    if (fin instanceof Date && fin.toDateString() === today) {
+      llamadasHoy++;
+      
+      const interes = sLlamadas[i][hLla.indexOf('Interés')];
+      const res = sLlamadas[i][hLla.indexOf('Resultado')];
+      const promotor = sLlamadas[i][hLla.indexOf('Usuario')];
+      
+      if (interes === 'Alto' || interes === 'Medio') interesados++;
+      if (res === 'Cerrado' || res === 'Exito') exitos++;
+      
+      if (!promotoresStats[promotor]) promotoresStats[promotor] = { llamadas: 0, interesados: 0, exitos: 0 };
+      promotoresStats[promotor].llamadas++;
+      if (interes === 'Alto' || interes === 'Medio') promotoresStats[promotor].interesados++;
+      if (res === 'Cerrado' || res === 'Exito') promotoresStats[promotor].exitos++;
+    }
+  }
+  
+  // Métricas Prospectos
+  const hPros = sProspectos[0];
   let pendientes = 0;
-  
-  const today = new Date();
-  const todayStr = today.toDateString();
-  
-  for (let i = 1; i < data.length; i++) {
-    const estado = (data[i][estadoIdx] || '').toString().trim();
-    const interes = (data[i][interesIdx] || '').toString().trim();
-    const ultima = data[i][ultimaIdx];
-    
-    if (estado === 'Pendiente' || estado === '') {
-      pendientes++;
-    }
-    
-    if (interes === 'Alto') {
-      interesAlto++;
-    }
-    
-    if (ultima instanceof Date) {
-      if (ultima.toDateString() === todayStr && estado !== 'Pendiente' && estado !== '') {
-        llamadasHoy++;
-      }
-    }
+  let totales = sProspectos.length - 1;
+  for (let i = 1; i < sProspectos.length; i++) {
+    const est = sProspectos[i][hPros.indexOf('Estado')];
+    if (est === 'Pendiente' || est === '') pendientes++;
   }
   
   return {
     success: true,
-    metrics: { llamadasHoy, interesAlto, pendientes }
+    metrics: {
+      conectados,
+      inactivos,
+      activos: conectados - inactivos,
+      llamadasHoy,
+      interesados,
+      exitos,
+      conversion: llamadasHoy > 0 ? ((exitos / llamadasHoy) * 100).toFixed(1) + '%' : '0%',
+      pendientes,
+      totales,
+      promotoresStats
+    }
   };
 }
 
 // ============================================================
-// 4. MANEJADORES DE LA API
+// 4. SETUP DE BASE DE DATOS
+// ============================================================
+
+function setupDatabase() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  const schemas = {
+    [HOJAS.PROSPECTOS]: ['ID', 'DENUE_ID', 'Nombre', 'Telefono', 'Estado', 'Intentos', 'AsignadoA', 'ReservadoHasta', 'UltimaLlamada', 'ProximoSeguimiento', 'NivelInteres', 'ResultadoFinal'],
+    [HOJAS.USUARIOS]: ['ID', 'Nombre', 'Correo', 'Password', 'Rol', 'Activo', 'UltimoLogin', 'UltimaActividad'],
+    [HOJAS.CONVERSACIONES]: ['ID', 'Prospecto', 'Usuario', 'Fecha', 'Nodo', 'Boton', 'Notas'],
+    [HOJAS.LLAMADAS]: ['ID', 'Prospecto', 'Usuario', 'Inicio', 'Fin', 'Duración', 'Resultado', 'Interés', 'Notas'],
+    [HOJAS.SEGUIMIENTOS]: ['Prospecto', 'Fecha', 'Responsable', 'Estado', 'Observaciones'],
+    [HOJAS.SESIONES]: ['Usuario', 'Login', 'Ultima_Actividad', 'Llamada_Actual', 'Estado']
+  };
+  
+  Object.keys(schemas).forEach(sheetName => {
+    let sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
+      sheet.appendRow(schemas[sheetName]);
+    }
+  });
+
+  const sheetProspectos = ss.getSheetByName(HOJAS.PROSPECTOS);
+  if (sheetProspectos.getLastRow() <= 1) {
+    const sheetAlta = ss.getSheetByName('Alta confianza nacional');
+    if (sheetAlta) {
+      const dataAlta = sheetAlta.getDataRange().getValues();
+      const headers = dataAlta[0];
+      const denueCol = headers.indexOf('ID DENUE');
+      const nombreCol = headers.indexOf('Nombre del establecimiento');
+      const telCol = headers.indexOf('Teléfono');
+      
+      const newRows = [];
+      for (let i=1; i<dataAlta.length; i++) {
+        if (dataAlta[i][denueCol]) {
+          newRows.push([
+            generateUUID(), 
+            dataAlta[i][denueCol] || '',
+            dataAlta[i][nombreCol] || 'Sin Nombre',
+            dataAlta[i][telCol] || 'Sin Teléfono',
+            'Pendiente', 0, '', '', '', '', '', ''
+          ]);
+        }
+      }
+      if (newRows.length > 0) {
+        sheetProspectos.getRange(2, 1, newRows.length, schemas[HOJAS.PROSPECTOS].length).setValues(newRows);
+      }
+    }
+  }
+  
+  // Agregar usuario admin por defecto si está vacía
+  const sheetUsr = ss.getSheetByName(HOJAS.USUARIOS);
+  if (sheetUsr.getLastRow() <= 1) {
+    sheetUsr.appendRow([generateUUID(), 'Admin', 'admin@admin.com', 'admin123', 'admin', 'Si', '', '']);
+    sheetUsr.appendRow([generateUUID(), 'Promotor 1', 'promotor@admin.com', 'promo123', 'promotor', 'Si', '', '']);
+  }
+  
+  console.log("Base de datos estructurada con éxito.");
+}
+
+// ============================================================
+// 5. MANEJADORES DE LA API (doGet / doPost)
 // ============================================================
 
 function doGet(e) {
-  if (!e || !e.parameter.action) {
-    return ContentService.createTextOutput(JSON.stringify({ error: 'Falta el parámetro action' })).setMimeType(ContentService.MimeType.JSON);
-  }
-  const params = e.parameter;
-  const action = params.action;
+  if (!e || !e.parameter.action) return ContentService.createTextOutput(JSON.stringify({ error: 'Falta action' })).setMimeType(ContentService.MimeType.JSON);
   
+  const action = e.parameter.action;
   try {
     let response = {};
     switch (action) {
-      case 'login': response = handleLogin(params.usuario, params.password); break;
-      case 'getProspect': response = getNextProspect(params.idUsuario); break;
-      case 'releaseProspect': response = releaseProspect(params.idProspecto, params.idUsuario); break;
+      case 'login': response = handleLogin(e.parameter.usuario, e.parameter.password); break;
+      case 'getProspect': response = getNextProspect(e.parameter.idUsuario); break;
+      case 'releaseProspect': response = releaseProspect(e.parameter.idProspecto, e.parameter.idUsuario); break;
       case 'getConfig': response = getConfig(); break;
       case 'getDashboardMetrics': response = getDashboardMetrics(); break;
       case 'getNodes':
-        const nodeSheet = getSheet(HOJAS.NODOS);
-        const nodeData = nodeSheet.getDataRange().getValues();
+        const ns = getSheet(HOJAS.NODOS);
+        const nd = ns.getDataRange().getValues();
+        const h = nd[0];
         const nodes = [];
-        const header = nodeData[0];
-        for (let i = 1; i < nodeData.length; i++) {
-          const row = nodeData[i];
-          const node = {};
-          header.forEach((col, idx) => { node[col] = row[idx]; });
-          if (node.botones) {
-            try { node.botones = JSON.parse(node.botones); } catch (err) { node.botones = []; }
-          }
-          nodes.push(node);
+        for (let i = 1; i < nd.length; i++) {
+          const n = {};
+          h.forEach((col, idx) => { n[col] = nd[i][idx]; });
+          if (n.botones) { try { n.botones = JSON.parse(n.botones); } catch(err) { n.botones = []; } }
+          nodes.push(n);
         }
         response = { success: true, nodes };
         break;
-      default: response = { error: 'Acción no reconocida' };
+      default: response = { error: 'Acción no válida' };
     }
     return ContentService.createTextOutput(JSON.stringify(response)).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
@@ -342,74 +493,21 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  if (!e) return ContentService.createTextOutput(JSON.stringify({ error: 'No se recibieron datos' })).setMimeType(ContentService.MimeType.JSON);
-  
+  if (!e) return ContentService.createTextOutput(JSON.stringify({ error: 'No data' })).setMimeType(ContentService.MimeType.JSON);
   try {
     const data = JSON.parse(e.postData.contents);
-    const action = data.action;
     let response = {};
-    
-    switch (action) {
+    switch (data.action) {
       case 'saveStep': response = saveConversationStep(data); break;
       case 'finishCall': response = finishCall(data); break;
-      default: response = { error: 'Acción no reconocida' };
+      case 'logActivity': 
+        logActivity(data.idUsuario);
+        response = { success: true };
+        break;
+      default: response = { error: 'Acción no válida' };
     }
     return ContentService.createTextOutput(JSON.stringify(response)).setMimeType(ContentService.MimeType.JSON);
   } catch (error) {
     return ContentService.createTextOutput(JSON.stringify({ error: error.message })).setMimeType(ContentService.MimeType.JSON);
   }
-}
-
-// ============================================================
-// 5. HERRAMIENTAS ADMINISTRATIVAS
-// ============================================================
-
-function prepararHojaUnica() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const hoja = ss.getSheetByName(HOJAS.PROSPECTOS);
-  
-  if (!hoja) {
-    throw new Error("No se encontró la hoja: " + HOJAS.PROSPECTOS);
-  }
-  
-  const headerRange = hoja.getRange(1, 1, 1, hoja.getLastColumn());
-  const headers = headerRange.getValues()[0];
-  
-  const columnasFaltantes = [
-    'ID', 'Estado', 'Intento', 'Bloqueado por', 'Última llamada', 
-    'Notas', 'Interés', 'Próxima acción', 'Seguimiento', 'Payload final'
-  ];
-  
-  let currentLastCol = hoja.getLastColumn();
-  
-  // Agregar encabezados faltantes
-  for (const colName of columnasFaltantes) {
-    if (headers.indexOf(colName) === -1) {
-      currentLastCol++;
-      hoja.getRange(1, currentLastCol).setValue(colName);
-      headers.push(colName);
-    }
-  }
-  
-  // Generar IDs para filas que no lo tengan
-  const idIdx = headers.indexOf('ID');
-  if (idIdx !== -1) {
-    const lastRow = hoja.getLastRow();
-    if (lastRow > 1) {
-      const idsRange = hoja.getRange(2, idIdx + 1, lastRow - 1, 1);
-      const ids = idsRange.getValues();
-      let changed = false;
-      for (let i = 0; i < ids.length; i++) {
-        if (!ids[i][0] || ids[i][0].toString().trim() === '') {
-          ids[i][0] = generateUUID();
-          changed = true;
-        }
-      }
-      if (changed) {
-        idsRange.setValues(ids);
-      }
-    }
-  }
-  
-  console.log("Hoja preparada correctamente con las columnas necesarias.");
 }

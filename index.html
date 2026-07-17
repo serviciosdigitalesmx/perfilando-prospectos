@@ -3,49 +3,149 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dialer - Prospección</title>
+  <title>Dialer - CRM de Productividad</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Vista Login -->
+
+  <!-- =============================== -->
+  <!-- LOGIN VIEW -->
+  <!-- =============================== -->
   <div id="login-view" class="view active">
     <div class="login-container">
-      <h1>Dialer</h1>
+      <h1>Fixi Dialer</h1>
       <form id="login-form">
-        <input type="email" id="email" placeholder="Email" required>
-        <input type="password" id="password" placeholder="Contraseña" required>
-        <button type="submit">Iniciar sesión</button>
-        <div id="login-error" class="error"></div>
+        <div class="form-group">
+          <input type="email" id="email" placeholder="Correo electrónico" required>
+        </div>
+        <div class="form-group">
+          <input type="password" id="password" placeholder="Contraseña" required>
+        </div>
+        <button type="submit" class="btn primary-btn" style="width:100%">Iniciar Sesión</button>
+        <p id="login-error" class="error"></p>
       </form>
     </div>
   </div>
 
-  <!-- Vista Principal (Marcador) -->
-  <div id="main-view" class="view">
-    <!-- Cabecera con usuario y dashboard link -->
-    <header>
-      <span id="user-name"></span>
-      <button id="dashboard-btn">Dashboard</button>
-    </header>
-    <!-- Contenedor de prospecto -->
-    <div id="prospect-container">
-      <!-- Tarjeta del taller se renderizará aquí -->
+  <!-- HEADER GLOBAL (Excepto Login) -->
+  <header id="main-header" style="display:none; padding: 1rem 2rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+    <div style="display:flex; align-items:center; gap:1rem;">
+      <span id="user-name" style="font-weight:700; font-size:1.2rem; color:var(--primary)"></span>
+      <span id="user-role" class="badge"></span>
     </div>
-    <!-- Contenedor de flujo de conversación -->
-    <div id="flow-container">
-      <!-- Nodos de conversación -->
+    <button id="logout-btn" class="btn outline-btn" onclick="logout()">Cerrar Sesión</button>
+  </header>
+
+  <!-- =============================== -->
+  <!-- PROMOTER VIEW -->
+  <!-- =============================== -->
+  <div id="promoter-view" class="view">
+    
+    <!-- Estado Idle -->
+    <div id="promoter-idle" class="promoter-center">
+      <h2 style="margin-bottom: 1rem;">Listo para prospectar</h2>
+      <button class="btn primary-btn btn-lg" onclick="fetchNextProspect()" id="btn-next-call" style="font-size:1.5rem; padding: 1rem 3rem; border-radius: 50px;">
+        Siguiente Llamada
+      </button>
+      <p id="promoter-status-msg" style="margin-top: 1rem; color: var(--text-muted);"></p>
     </div>
-    <!-- Botones de acción (llamar, maps, etc.) -->
-    <div id="action-buttons">
-      <!-- Los botones se generan dinámicamente -->
+
+    <!-- Estado Activo (En llamada) -->
+    <div id="promoter-active" style="display: none; max-width: 800px; margin: 0 auto; width:100%;">
+      
+      <!-- Ficha del Prospecto -->
+      <div class="card glass" style="margin-bottom: 2rem;">
+        <h2 id="t-nombre" class="taller-title" style="margin-bottom: 1rem; font-size: 2rem; color:white;"></h2>
+        <div class="grid-info">
+          <div class="info-item">
+            <span class="label">Teléfono</span>
+            <span id="t-telefono" class="highlight" style="font-size:1.5rem;"></span>
+          </div>
+          <div class="info-item">
+            <span class="label">Intentos previos</span>
+            <span id="t-intentos" style="font-size:1.2rem;"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Guion Interactivo -->
+      <div class="flow-card glass">
+        <h3 style="margin-bottom: 1rem; color: var(--text-muted); text-transform:uppercase; font-size:0.9rem; letter-spacing:1px;">Guion de Llamada</h3>
+        <div class="node-content">
+          <p id="node-text" style="font-size:1.5rem; line-height:1.4; margin-bottom:2rem;"></p>
+          <div id="node-buttons" class="node-actions"></div>
+        </div>
+      </div>
+
+      <!-- Botón de Escape (Terminar o Soltar) -->
+      <div class="quick-actions" style="margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top:2rem;">
+        <button class="btn danger-btn" onclick="openFinishModal()">Colgar / Finalizar Llamada</button>
+      </div>
+
     </div>
   </div>
 
-  <!-- Vista Dashboard -->
-  <div id="dashboard-view" class="view">
-    <button id="back-to-main">← Volver</button>
-    <div id="dashboard-content">
-      <!-- KPIs -->
+  <!-- =============================== -->
+  <!-- ADMIN VIEW (DASHBOARD) -->
+  <!-- =============================== -->
+  <div id="admin-view" class="view">
+    <div style="max-width: 1200px; margin: 0 auto; width:100%;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2rem;">
+        <h1>Panel de Control (En Vivo)</h1>
+        <button class="btn secondary-btn" onclick="loadDashboard()">Actualizar</button>
+      </div>
+      
+      <div id="dashboard-content">
+        <!-- Renderizado dinámico -->
+      </div>
+    </div>
+  </div>
+
+  <!-- =============================== -->
+  <!-- MODAL: FINALIZAR LLAMADA -->
+  <!-- =============================== -->
+  <div id="finish-call-modal" class="modal-overlay">
+    <div class="modal-content glass">
+      <h2>Resultado de la Llamada</h2>
+      <form id="finish-call-form">
+        <div class="form-group">
+          <label>¿Qué pasó?</label>
+          <select id="estado-final" required>
+            <option value="">Selecciona...</option>
+            <option value="Volver a llamar">No contestó / Ocupado (Volver a intentar)</option>
+            <option value="Número equivocado">Número equivocado / No existe</option>
+            <option value="No interesado">No le interesa</option>
+            <option value="Interesado">Interesado / Pidió información</option>
+            <option value="Cerrado">Venta cerrada / Éxito</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Nivel de Interés</label>
+          <select id="nivel-interes">
+            <option value="N/A">N/A</option>
+            <option value="Bajo">Bajo</option>
+            <option value="Medio">Medio</option>
+            <option value="Alto">Alto</option>
+          </select>
+        </div>
+        
+        <!-- Opciones condicionales si requiere seguimiento -->
+        <div class="form-group">
+          <label>Agendar Seguimiento (Opcional)</label>
+          <input type="date" id="fecha-seguimiento">
+        </div>
+
+        <div class="form-group">
+          <label>Notas / Observaciones de la llamada</label>
+          <textarea id="notas-final" rows="3" placeholder="Ej. El dueño llega a las 4pm..."></textarea>
+        </div>
+        
+        <div class="modal-actions">
+          <button type="button" class="btn outline-btn" onclick="document.getElementById('finish-call-modal').classList.remove('active')">Cancelar</button>
+          <button type="submit" class="btn primary-btn">Guardar y Siguiente</button>
+        </div>
+      </form>
     </div>
   </div>
 
