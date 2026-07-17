@@ -1,5 +1,5 @@
 // Configuración
-const API_URL = "https://script.google.com/macros/s/AKfycby5t4c1F-Q1Z2L4eS9i-eP4-E3qYyv-iP9oV4g14l3o4B4-7i0r1mFj8q/exec"; // ¡Reemplázame!
+const API_URL = "https://script.google.com/macros/s/AKfycbyqwFneV1aBz7nHHQKjmZ1gdu3RzXbxli8_VTU1UhQp-ZCCxsIxmeXKZ_b1pBIlxkwMUg/exec";
 
 // Estado Global
 const state = {
