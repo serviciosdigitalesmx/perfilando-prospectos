@@ -215,6 +215,18 @@ function startCallUI() {
   tTelefono.textContent = state.prospect.telefono || 'Sin teléfono';
   tIntentos.textContent = state.prospect.intentos || '0';
   
+  // Configurar botón de WhatsApp
+  const waBtn = document.getElementById('btn-whatsapp');
+  if (state.prospect.telefono && state.prospect.telefono.toString().trim() !== '') {
+    let cleanPhone = state.prospect.telefono.toString().replace(/\D/g, '');
+    if (cleanPhone.length === 10) cleanPhone = '52' + cleanPhone; // Agregar código de país MX por defecto
+    const mensaje = encodeURIComponent(`Hola ${state.prospect.nombre || ''}, soy de Fixi! 🚗🔧 Estamos ayudando a talleres automotrices a crecer sus ventas y conseguir más clientes. Me encantaría platicarles rápidamente cómo funciona. ¿Tienen 2 minutitos?`);
+    waBtn.href = `https://wa.me/${cleanPhone}?text=${mensaje}`;
+    waBtn.style.display = 'inline-flex';
+  } else {
+    waBtn.style.display = 'none';
+  }
+  
   // Buscar nodo inicial
   const startNode = state.nodes.find(n => n.id === 'inicio' || n.ID === 'inicio') || state.nodes[0];
   if (startNode) renderNode(startNode);
