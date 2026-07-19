@@ -220,7 +220,7 @@ function startCallUI() {
   if (state.prospect.telefono && state.prospect.telefono.toString().trim() !== '') {
     let cleanPhone = state.prospect.telefono.toString().replace(/\D/g, '');
     if (cleanPhone.length === 10) cleanPhone = '52' + cleanPhone; // Agregar código de país MX por defecto
-    const mensaje = encodeURIComponent(`Hola ${state.prospect.nombre || ''}, soy de Fixi! 🚗🔧 Estamos ayudando a talleres automotrices a crecer sus ventas y conseguir más clientes. Me encantaría platicarles rápidamente cómo funciona. ¿Tienen 2 minutitos?`);
+    const mensaje = encodeURIComponent(`Hola ${state.prospect.nombre || 'mucho gusto'}, soy Jesús y soy desarrollador de software. Acabo de crear Fixi, un sistema para que los talleres mecánicos gestionen su operación, y estoy buscando talleres para hacer pruebas. ¿Tendrían 2 minutitos para platicar?`);
     waBtn.href = `https://wa.me/${cleanPhone}?text=${mensaje}`;
     waBtn.style.display = 'inline-flex';
   } else {
