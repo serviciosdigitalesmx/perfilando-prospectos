@@ -98,7 +98,10 @@
       <!-- HEADER DASHBOARD -->
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2rem;">
         <h1>Panel de Control (En Vivo)</h1>
-        <button class="btn secondary-btn" onclick="loadDashboard()">Actualizar Métricas</button>
+        <div style="display:flex; gap:1rem;">
+          <button class="btn danger-btn" onclick="forceSetupDB()">Inicializar Base de Datos</button>
+          <button class="btn secondary-btn" onclick="loadDashboard()">Actualizar Métricas</button>
+        </div>
       </div>
       
       <!-- DASHBOARD CONTENT -->

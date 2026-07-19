@@ -471,6 +471,10 @@ function doGet(e) {
       case 'releaseProspect': response = releaseProspect(e.parameter.idProspecto, e.parameter.idUsuario); break;
       case 'getConfig': response = getConfig(); break;
       case 'getDashboardMetrics': response = getDashboardMetrics(); break;
+      case 'setupDB':
+        setupDatabase();
+        response = { success: true, message: 'Base de datos configurada' };
+        break;
       case 'getNodes':
         const ns = getSheet(HOJAS.NODOS);
         const nd = ns.getDataRange().getValues();

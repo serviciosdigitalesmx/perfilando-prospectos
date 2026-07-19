@@ -404,6 +404,22 @@ async function loadDashboard() {
   }
 }
 
+async function forceSetupDB() {
+  if(!confirm("¿Estás seguro de que quieres inicializar la Base de Datos? Esto creará las hojas faltantes y copiará los prospectos de 'Alta confianza nacional'.")) return;
+  
+  showNotification('Ejecutando configuración en el servidor... puede tardar unos segundos.');
+  try {
+    const res = await apiCall('setupDB');
+    if (res.success) {
+      showNotification('¡Base de datos configurada exitosamente!');
+    } else {
+      showNotification('Hubo un problema configurando la BD.', true);
+    }
+  } catch (e) {
+    showNotification('Error de conexión al configurar la BD.', true);
+  }
+}
+
 // Add user
 const addUserForm = document.getElementById('add-user-form');
 if (addUserForm) {
