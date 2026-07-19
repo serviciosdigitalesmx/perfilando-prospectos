@@ -89,11 +89,11 @@ function handleLogin(correo, password) {
   const sheet = getSheet(HOJAS.USUARIOS);
   const data = sheet.getDataRange().getValues();
   const header = data[0];
-  const userCol = header.indexOf('Correo');
-  const passCol = header.indexOf('Password');
+  const userCol = header.indexOf('Correo') !== -1 ? header.indexOf('Correo') : header.indexOf('Usuario');
+  const passCol = header.indexOf('Password') !== -1 ? header.indexOf('Password') : header.indexOf('Contraseña');
   const rolCol = header.indexOf('Rol');
   const idCol = header.indexOf('ID');
-  const nameCol = header.indexOf('Nombre');
+  const nameCol = header.indexOf('Nombre') !== -1 ? header.indexOf('Nombre') : userCol;
   
   for (let i = 1; i < data.length; i++) {
     if (data[i][userCol] === correo && data[i][passCol] === password) {

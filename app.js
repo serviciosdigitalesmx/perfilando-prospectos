@@ -123,7 +123,8 @@ async function initUserSession() {
   userNameDisplay.textContent = state.user.usuario;
   userRoleDisplay.textContent = state.user.rol.toUpperCase();
   
-  if (state.user.rol === 'admin') {
+  const lowerRol = (state.user.rol || '').toLowerCase();
+  if (lowerRol === 'admin' || lowerRol === 'administrador') {
     userRoleDisplay.className = 'badge badge-success';
     showView('admin-view');
     loadDashboard();
