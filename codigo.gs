@@ -500,6 +500,12 @@ function doPost(e) {
     switch (data.action) {
       case 'saveStep': response = saveConversationStep(data); break;
       case 'finishCall': response = finishCall(data); break;
+      case 'addUser': 
+        logActivity(data.idAdmin); // solo registro del admin
+        const sheetUsr = getSheet(HOJAS.USUARIOS);
+        sheetUsr.appendRow([generateUUID(), data.nombre, data.correo, data.pass, data.rol, 'Si', '', '']);
+        response = { success: true };
+        break;
       case 'logActivity': 
         logActivity(data.idUsuario);
         response = { success: true };

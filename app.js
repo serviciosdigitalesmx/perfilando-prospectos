@@ -124,19 +124,51 @@ async function initUserSession() {
   userRoleDisplay.textContent = state.user.rol.toUpperCase();
   
   const lowerRol = (state.user.rol || '').toLowerCase();
+  const modeBtn = document.getElementById('mode-toggle-btn');
+  
   if (lowerRol === 'admin' || lowerRol === 'administrador') {
     userRoleDisplay.className = 'badge badge-success';
+    modeBtn.style.display = 'inline-flex';
+    modeBtn.textContent = 'Ir a Llamadas';
+    modeBtn.onclick = () => toggleAdminMode('promotor');
     showView('admin-view');
     loadDashboard();
     // Heartbeat admin
-    setInterval(() => apiCall('logActivity', { idUsuario: state.user.id }, 'POST'), 60000);
+    setInterval(() => apiCall('logActivity', { idUsuario: state.user.id }, 'POST').catch(()=>{}), 60000);
   } else {
     userRoleDisplay.className = 'badge badge-warning';
+    modeBtn.style.display = 'none';
     showView('promoter-view');
     // Cargar nodos una sola vez
     const res = await apiCall('getNodes');
     if (res.success) state.nodes = res.nodes;
     resetPromoterUI();
+  }
+}
+
+function toggleAdminMode(targetMode) {
+  const modeBtn = document.getElementById('mode-toggle-btn');
+  if (targetMode === 'promotor') {
+    showView('promoter-view');
+    modeBtn.textContent = 'Volver al Panel';
+    modeBtn.onclick = () => toggleAdminMode('admin');
+    
+    // Cargar nodos si no se han cargado
+    if(state.nodes.length === 0) {
+      apiCall('getNodes').then(res => {
+        if(res.success) {
+          state.nodes = res.nodes;
+          resetPromoterUI();
+        }
+      });
+    } else {
+      resetPromoterUI();
+    }
+  } else {
+    showView('admin-view');
+    modeBtn.textContent = 'Ir a Llamadas';
+    modeBtn.onclick = () => toggleAdminMode('promotor');
+    loadDashboard();
   }
 }
 
@@ -370,6 +402,39 @@ async function loadDashboard() {
   } catch(e) {
     content.innerHTML = '<p class="error" style="text-align:center">Error al cargar datos.</p>';
   }
+}
+
+// Add user
+const addUserForm = document.getElementById('add-user-form');
+if (addUserForm) {
+  addUserForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = addUserForm.querySelector('button');
+    btn.disabled = true;
+    btn.textContent = 'Guardando...';
+    
+    try {
+      const res = await apiCall('addUser', {
+        nombre: document.getElementById('new-user-name').value,
+        correo: document.getElementById('new-user-email').value,
+        pass: document.getElementById('new-user-pass').value,
+        rol: document.getElementById('new-user-role').value,
+        idAdmin: state.user.id
+      }, 'POST');
+      
+      if (res.success) {
+        showNotification('Usuario agregado correctamente');
+        addUserForm.reset();
+      } else {
+        showNotification(res.message || 'Error al agregar', true);
+      }
+    } catch(e) {
+      showNotification('Error de conexión', true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Agregar';
+    }
+  });
 }
 
 // Check existing session
