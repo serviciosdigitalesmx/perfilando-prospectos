@@ -271,17 +271,30 @@ function finishCall(data) {
     
     // Lógica del cerebro: ¿Volver a intentar?
     const cerrar = ['Cerrado', 'No interesado', 'Número equivocado', 'Exito'];
+    const agendar = ['Interesado']; // Estos no deberían volver a pendiente directo
+    
+    let isRecycle = false;
+    
     if (cerrar.includes(data.estadoFinal)) {
       rData[headerP.indexOf('Estado')] = 'Cerrado';
+    } else if (agendar.includes(data.estadoFinal)) {
+      rData[headerP.indexOf('Estado')] = 'En seguimiento';
     } else {
-      // Por defecto, si no es final, vuelve a pendiente para reintento
+      // Si es un reintento (Ej: Buzón), vuelve a Pendiente pero lo mandamos al final de la cola
       rData[headerP.indexOf('Estado')] = 'Pendiente';
+      isRecycle = true;
     }
     
     rData[headerP.indexOf('ReservadoHasta')] = '';
     rData[headerP.indexOf('AsignadoA')] = '';
     
-    rRange.setValues([rData]);
+    if (isRecycle) {
+      // Mover al fondo de la hoja para que no vuelva a salir inmediatamente
+      sheetP.deleteRow(rowP);
+      sheetP.appendRow(rData);
+    } else {
+      rRange.setValues([rData]);
+    }
   }
   
   // 2. Registrar en Llamadas (Inmutable)
