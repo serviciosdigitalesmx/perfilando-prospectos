@@ -357,6 +357,15 @@ function getDashboardMetrics() {
   let llamadasHoy = 0;
   let interesados = 0;
   let exitos = 0;
+  // Cargar mapa de Usuarios (ID -> Nombre)
+  const sUsuarios = getSheet(HOJAS.USUARIOS).getDataRange().getValues();
+  const hUsr = sUsuarios[0];
+  const uIdCol = hUsr.indexOf('ID');
+  const uNameCol = hUsr.indexOf('Nombre') !== -1 ? hUsr.indexOf('Nombre') : hUsr.indexOf('Usuario');
+  const userMap = {};
+  for(let i=1; i<sUsuarios.length; i++) {
+    userMap[sUsuarios[i][uIdCol]] = sUsuarios[i][uNameCol] || sUsuarios[i][uIdCol];
+  }
   
   // Mapeo por promotor
   const promotoresStats = {};
@@ -368,15 +377,16 @@ function getDashboardMetrics() {
       
       const interes = sLlamadas[i][hLla.indexOf('Interés')];
       const res = sLlamadas[i][hLla.indexOf('Resultado')];
-      const promotor = sLlamadas[i][hLla.indexOf('Usuario')];
+      const idPromotor = sLlamadas[i][hLla.indexOf('Usuario')];
+      const promotorName = userMap[idPromotor] || idPromotor;
       
       if (interes === 'Alto' || interes === 'Medio') interesados++;
       if (res === 'Cerrado' || res === 'Exito') exitos++;
       
-      if (!promotoresStats[promotor]) promotoresStats[promotor] = { llamadas: 0, interesados: 0, exitos: 0 };
-      promotoresStats[promotor].llamadas++;
-      if (interes === 'Alto' || interes === 'Medio') promotoresStats[promotor].interesados++;
-      if (res === 'Cerrado' || res === 'Exito') promotoresStats[promotor].exitos++;
+      if (!promotoresStats[promotorName]) promotoresStats[promotorName] = { llamadas: 0, interesados: 0, exitos: 0 };
+      promotoresStats[promotorName].llamadas++;
+      if (interes === 'Alto' || interes === 'Medio') promotoresStats[promotorName].interesados++;
+      if (res === 'Cerrado' || res === 'Exito') promotoresStats[promotorName].exitos++;
     }
   }
   
