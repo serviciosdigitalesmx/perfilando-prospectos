@@ -215,16 +215,24 @@ function startCallUI() {
   tTelefono.textContent = state.prospect.telefono || 'Sin teléfono';
   tIntentos.textContent = state.prospect.intentos || '0';
   
-  // Configurar botón de WhatsApp
+  // Configurar botón de WhatsApp y Llamar
   const waBtn = document.getElementById('btn-whatsapp');
+  const callBtn = document.getElementById('btn-llamar');
   if (state.prospect.telefono && state.prospect.telefono.toString().trim() !== '') {
     let cleanPhone = state.prospect.telefono.toString().replace(/\D/g, '');
+    
+    // Botón Llamar
+    callBtn.href = `tel:${cleanPhone}`;
+    callBtn.style.display = 'inline-flex';
+    
+    // Botón WhatsApp
     if (cleanPhone.length === 10) cleanPhone = '52' + cleanPhone; // Agregar código de país MX por defecto
     const mensaje = encodeURIComponent(`Hola ${state.prospect.nombre || 'mucho gusto'}, soy Jesús y soy desarrollador de software. Acabo de crear Fixi, un sistema para que los talleres mecánicos gestionen su operación, y estoy buscando talleres para hacer pruebas. ¿Tendrían 2 minutitos para platicar?`);
     waBtn.href = `https://wa.me/${cleanPhone}?text=${mensaje}`;
     waBtn.style.display = 'inline-flex';
   } else {
     waBtn.style.display = 'none';
+    callBtn.style.display = 'none';
   }
   
   // Buscar nodo inicial
